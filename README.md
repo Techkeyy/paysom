@@ -1,6 +1,6 @@
 # ⚡ ReactPay
 
-> Trustless freelance escrow powered by Somnia Reactivity — payments that execute themselves.
+> Trustless freelance escrow powered by Somnia Reactivity. Payments that execute themselves.
 
 ## What is ReactPay?
 
