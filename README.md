@@ -4,7 +4,7 @@
 
 ## What is ReactPay?
 
-ReactPay is a decentralized escrow protocol for freelance payments built on Somnia. A client locks funds on-chain, a freelancer delivers work, and payment releases **automatically** — no middlemen, no fees, no delays.
+ReactPay is a decentralized escrow protocol for freelance payments built on Somnia. A client locks funds on-chain, a freelancer delivers work, and payment releases **automatically**no , middlemen, no fees, no delays.
 
 This is powered by **Somnia Reactivity**. The contract inherits `SomniaEventHandler` and uses `_onEvent` to react to on-chain events in real time:
 
