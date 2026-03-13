@@ -88,7 +88,7 @@ function CreateModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
         const appTx = await wc.writeContract({ address: MOCK_STT_ADDRESS, abi: MOCK_STT_ABI, functionName: 'approve', args: [REACT_PAY_ADDRESS, amt] })
         await publicClient.waitForTransactionReceipt({ hash: appTx })
         setStatus('Step 2/2: Creating escrow...')
-        const tx = await wc.writeContract({ address: REACT_PAY_ADDRESS, abi: REACT_PAY_ABI, functionName: 'createEscrow', args: [freelancer as `0x${string}`, amt, title,BigInt(300)] })
+        const tx = await wc.writeContract({ address: REACT_PAY_ADDRESS, abi: REACT_PAY_ABI, functionName: 'createEscrow', args: [freelancer as `0x${string}`, amt, title, BigInt(300)] })
         await publicClient.waitForTransactionReceipt({ hash: tx })
       } else {
         const eth = (window as any).ethereum
@@ -215,7 +215,6 @@ function EscrowCard({ escrow, myAddress, onDeliver, onRefresh }: { escrow: Escro
 
   return (
     <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 16, borderLeft: `3px solid ${color}`, overflow: 'hidden', transition: 'box-shadow 0.2s' }}>
-      {/* Collapsed header — always visible */}
       <button
         onClick={() => setExpanded(e => !e)}
         style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 20px', background: 'transparent', border: 'none', cursor: 'pointer', color: T.text, textAlign: 'left' }}
@@ -232,7 +231,6 @@ function EscrowCard({ escrow, myAddress, onDeliver, onRefresh }: { escrow: Escro
         </div>
       </button>
 
-      {/* Expanded details */}
       {expanded && (
         <div style={{ padding: '0 20px 18px', borderTop: `1px solid ${T.border}` }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px', margin: '14px 0' }}>
@@ -309,6 +307,28 @@ export default function App() {
     const t = setInterval(() => { fetchAll(); fetchRSTT() }, 15000)
     return () => clearInterval(t)
   }, [fetchAll, fetchRSTT, deliverEscrow])
+
+  useEffect(() => {
+    if (!isConnected) return
+    async function checkNetwork() {
+      const eth = (window as any).ethereum
+      if (!eth) return
+      const chainId = await eth.request({ method: 'eth_chainId' })
+      if (chainId !== '0xc478') {
+        try {
+          await eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0xc478' }] })
+        } catch (e: any) {
+          if (e.code === 4902) {
+            await eth.request({
+              method: 'wallet_addEthereumChain',
+              params: [{ chainId: '0xc478', chainName: 'Somnia Testnet', nativeCurrency: { name: 'Somnia Test Token', symbol: 'STT', decimals: 18 }, rpcUrls: ['https://dream-rpc.somnia.network'], blockExplorerUrls: ['https://shannon-explorer.somnia.network'] }]
+            })
+          }
+        }
+      }
+    }
+    checkNetwork()
+  }, [isConnected])
 
   async function getFaucet() {
     try {
