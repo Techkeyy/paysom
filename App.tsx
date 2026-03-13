@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useAccount, useConnect, useDisconnect, useBalance, useWalletClient } from 'wagmi'
-import { injected } from 'wagmi/connectors'
+import { injected, walletConnect, coinbaseWallet } from 'wagmi/connectors'
 import { formatEther, parseUnits, keccak256, toBytes, createPublicClient, http } from 'viem'
 import { MOCK_STT_ADDRESS, REACT_PAY_ADDRESS, MOCK_STT_ABI, REACT_PAY_ABI, getStateName, STATE_COLOR } from '@/lib/contracts'
 import { somniaTestnet } from '@/lib/chain'
@@ -20,6 +20,8 @@ const fmt = (v: bigint) => parseFloat(formatEther(v)).toFixed(2)
 const stateColor = (s: number) => STATE_COLOR[getStateName(s)] ?? T.muted
 
 const publicClient = createPublicClient({ chain: somniaTestnet, transport: http('https://dream-rpc.somnia.network') })
+
+const WC_PROJECT_ID = 'b8a1daa2dd22335f4e2a5a2d3c9d9e1f'
 
 interface Escrow {
   id: bigint; client: string; freelancer: string; amount: bigint; title: string
@@ -55,6 +57,76 @@ function Modal({ children, onClose }: { children: React.ReactNode; onClose: () =
         {children}
       </div>
     </div>
+  )
+}
+
+function WalletModal({ onClose }: { onClose: () => void }) {
+  const { connect } = useConnect()
+  const [connecting, setConnecting] = useState<string | null>(null)
+  const [err, setErr] = useState('')
+
+  const wallets = [
+    { id: 'injected', label: 'MetaMask / Rabby / Zerion', desc: 'Browser extension wallet', icon: '🦊', connector: injected() },
+    { id: 'walletconnect', label: 'WalletConnect', desc: 'Mobile & all WC wallets', icon: '🔗', connector: walletConnect({ projectId: WC_PROJECT_ID }) },
+    { id: 'coinbase', label: 'Coinbase Wallet', desc: 'Coinbase browser or app', icon: '🔵', connector: coinbaseWallet({ appName: 'ReactPay' }) },
+  ]
+
+  async function handleConnect(wallet: typeof wallets[0]) {
+    setConnecting(wallet.id)
+    setErr('')
+    try {
+      await connect({ connector: wallet.connector })
+      onClose()
+    } catch (e: any) {
+      setErr(e?.message ?? 'Connection failed')
+      setConnecting(null)
+    }
+  }
+
+  return (
+    <Modal onClose={onClose}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+        <div>
+          <div style={{ fontWeight: 800, fontSize: 18 }}>Connect Wallet</div>
+          <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>Choose your wallet to continue</div>
+        </div>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', color: T.muted, fontSize: 22, cursor: 'pointer' }}>×</button>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {wallets.map(wallet => (
+          <button
+            key={wallet.id}
+            onClick={() => handleConnect(wallet)}
+            disabled={!!connecting}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 16, padding: '14px 18px',
+              borderRadius: 14, background: connecting === wallet.id ? T.accentDim : T.surface2,
+              border: `1px solid ${connecting === wallet.id ? T.accentMid : T.border}`,
+              cursor: connecting ? 'not-allowed' : 'pointer', color: T.text,
+              textAlign: 'left', opacity: connecting && connecting !== wallet.id ? 0.5 : 1,
+              transition: 'all 0.15s',
+            }}
+          >
+            <div style={{ fontSize: 28, width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 12, background: T.surface, border: `1px solid ${T.border}` }}>
+              {connecting === wallet.id ? '⏳' : wallet.icon}
+            </div>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>{wallet.label}</div>
+              <div style={{ fontSize: 11, color: T.muted, marginTop: 2, fontFamily: T.mono }}>{wallet.desc}</div>
+            </div>
+            <div style={{ marginLeft: 'auto', color: T.muted, fontSize: 18 }}>›</div>
+          </button>
+        ))}
+      </div>
+
+      {err && <div style={{ marginTop: 14, padding: '10px 14px', borderRadius: 8, background: T.red + '15', border: `1px solid ${T.red}40`, fontSize: 12, color: T.red, fontFamily: T.mono }}>Error: {err}</div>}
+
+      <div style={{ marginTop: 16, fontSize: 10, color: T.muted, textAlign: 'center', fontFamily: T.mono, lineHeight: 1.6 }}>
+        By connecting you agree to use this dApp on Somnia Testnet.<br />
+        Make sure your wallet is set to Somnia Testnet (Chain ID: 50312).
+      </div>
+    </Modal>
   )
 }
 
@@ -272,7 +344,6 @@ function EscrowCard({ escrow, myAddress, onDeliver, onRefresh }: { escrow: Escro
 
 export default function App() {
   const { address, isConnected } = useAccount()
-  const { connect } = useConnect()
   const { disconnect } = useDisconnect()
   const { data: sttBal } = useBalance({ address, query: { enabled: isConnected } })
   const { data: wc } = useWalletClient()
@@ -282,6 +353,7 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [tab, setTab] = useState<'all' | 'mine'>('all')
   const [showCreate, setShowCreate] = useState(false)
+  const [showWallet, setShowWallet] = useState(false)
   const [deliverEscrow, setDeliverEscrow] = useState<Escrow | null>(null)
 
   const fetchAll = useCallback(async (showLoader = false) => {
@@ -364,6 +436,7 @@ export default function App() {
         button:hover:not(:disabled) { filter: brightness(1.1); }
       `}</style>
 
+      {showWallet && <WalletModal onClose={() => setShowWallet(false)} />}
       {showCreate && <CreateModal onClose={() => setShowCreate(false)} onDone={() => { fetchAll(); fetchRSTT() }} />}
       {deliverEscrow && <DeliverModal escrow={deliverEscrow} onClose={() => setDeliverEscrow(null)} onDone={() => { fetchAll(); fetchRSTT() }} />}
 
@@ -382,7 +455,7 @@ export default function App() {
             <div style={{ padding: '6px 12px', borderRadius: 8, background: T.surface2, border: '1px solid #1E2D3D', fontSize: 11, fontFamily: T.mono, color: T.muted }}>{sttBal ? parseFloat(formatEther(sttBal.value)).toFixed(3) : '—'} STT</div>
             <Btn onClick={() => disconnect()} style={{ padding: '7px 14px', borderRadius: 99, background: T.surface2, color: T.accent, border: '1px solid #4FFFB035', fontWeight: 700, fontSize: 11, cursor: 'pointer', fontFamily: T.mono }}>✓ {short(address ?? '')}</Btn>
           </>}
-          {!isConnected && <Btn onClick={() => connect({ connector: injected() })} style={{ padding: '10px 22px', borderRadius: 99, background: T.accent, color: '#0A0E14', border: 'none', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>Connect Wallet</Btn>}
+          {!isConnected && <Btn onClick={() => setShowWallet(true)} style={{ padding: '10px 22px', borderRadius: 99, background: T.accent, color: '#0A0E14', border: 'none', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>Connect Wallet</Btn>}
         </div>
       </header>
 
@@ -425,7 +498,7 @@ export default function App() {
             <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>No escrows yet</div>
             <div style={{ fontSize: 13, color: T.muted, marginBottom: 20 }}>{isConnected ? 'Create your first trustless escrow' : 'Connect your wallet to get started'}</div>
             {isConnected && <Btn onClick={() => setShowCreate(true)} style={{ padding: '10px 22px', borderRadius: 99, background: T.accent, color: '#0A0E14', border: 'none', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>Create Escrow</Btn>}
-            {!isConnected && <Btn onClick={() => connect({ connector: injected() })} style={{ padding: '10px 22px', borderRadius: 99, background: T.accent, color: '#0A0E14', border: 'none', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>Connect Wallet</Btn>}
+            {!isConnected && <Btn onClick={() => setShowWallet(true)} style={{ padding: '10px 22px', borderRadius: 99, background: T.accent, color: '#0A0E14', border: 'none', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>Connect Wallet</Btn>}
           </div>
         )}
 
