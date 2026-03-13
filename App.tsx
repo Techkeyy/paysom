@@ -66,8 +66,8 @@ function WalletModal({ onClose }: { onClose: () => void }) {
   const [err, setErr] = useState('')
 
   const wallets = [
-    { id: 'metamask', label: 'MetaMask', desc: 'Browser extension wallet', icon: '🦊', connector: injected() },
-    { id: 'zerion', label: 'Zerion', desc: 'Browser extension wallet', icon: '🔷', connector: injected() },
+    { id: 'metamask', label: 'MetaMask', desc: 'Browser extension / mobile app', icon: '🦊', connector: injected() },
+    { id: 'zerion', label: 'Zerion', desc: 'Browser extension / mobile app', icon: '🔷', connector: injected() },
     { id: 'walletconnect', label: 'WalletConnect', desc: 'Mobile & all WC wallets', icon: '🔗', connector: walletConnect({ projectId: WC_PROJECT_ID }) },
   ]
 
@@ -78,6 +78,20 @@ function WalletModal({ onClose }: { onClose: () => void }) {
       await connect({ connector: wallet.connector })
       onClose()
     } catch (e: any) {
+      // fallback: direct ethereum request for injected wallets (mobile Web3 browsers)
+      if (wallet.id === 'metamask' || wallet.id === 'zerion') {
+        try {
+          const eth = (window as any).ethereum
+          if (!eth) throw new Error("No wallet found — open this site inside your wallet's browser")
+          await eth.request({ method: 'eth_requestAccounts' })
+          onClose()
+          return
+        } catch (e2: any) {
+          setErr(e2?.message ?? 'Connection failed')
+          setConnecting(null)
+          return
+        }
+      }
       setErr(e?.message ?? 'Connection failed')
       setConnecting(null)
     }
@@ -128,7 +142,7 @@ function WalletModal({ onClose }: { onClose: () => void }) {
 }
 
 function GasBanner({ sttBal, onDismiss }: { sttBal: bigint; onDismiss: () => void }) {
-  if (sttBal >= BigInt('10000000000000000')) return null // hide if >= 0.01 STT
+  if (sttBal >= BigInt('10000000000000000')) return null
   return (
     <div style={{ background: '#F59E0B12', border: '1px solid #F59E0B35', borderRadius: 10, padding: '10px 16px', margin: '0 0 16px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -391,7 +405,6 @@ export default function App() {
     return () => clearInterval(t)
   }, [fetchAll, fetchRSTT, deliverEscrow])
 
-  // reset banner when wallet changes
   useEffect(() => { setGasBannerDismissed(false) }, [address])
 
   useEffect(() => {
@@ -461,6 +474,7 @@ export default function App() {
           .stats-grid > div:last-child { grid-column: span 2; }
           .hero-title { font-size: 26px !important; }
           .bal-stt { display: none !important; }
+          .bal-rstt { display: none !important; }
         }
       `}</style>
 
