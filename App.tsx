@@ -23,6 +23,18 @@ const publicClient = createPublicClient({ chain: somniaTestnet, transport: http(
 
 const WC_PROJECT_ID = 'b8a1daa2dd22335f4e2a5a2d3c9d9e1f'
 
+// helper: estimate gas or fall back to default
+async function estimateGas(eth: any, params: { from: string; to: string; data: string }): Promise<string> {
+  try {
+    const estimate = await eth.request({ method: 'eth_estimateGas', params: [{ ...params, gasPrice: '0x77359400' }] })
+    // add 20% buffer
+    const buffered = Math.floor(parseInt(estimate, 16) * 1.2).toString(16)
+    return '0x' + buffered
+  } catch {
+    return '0x7A120' // fallback 500k gas
+  }
+}
+
 interface Escrow {
   id: bigint; client: string; freelancer: string; amount: bigint; title: string
   deliveryHash: string; state: number; createdBlock: bigint; fundedBlock: bigint
@@ -66,8 +78,9 @@ function WalletModal({ onClose }: { onClose: () => void }) {
   const [err, setErr] = useState('')
 
   const wallets = [
-    { id: 'metamask', label: 'MetaMask', desc: 'Browser extension / mobile app', icon: '🦊', connector: injected() },
-    { id: 'zerion', label: 'Zerion', desc: 'Browser extension / mobile app', icon: '🔷', connector: injected() },
+    { id: 'metamask', label: 'MetaMask', desc: 'Browser extension wallet', icon: '🦊', connector: injected() },
+    { id: 'rabby', label: 'Rabby', desc: 'Browser extension wallet', icon: '🐰', connector: injected() },
+    { id: 'zerion', label: 'Zerion', desc: 'Browser extension wallet', icon: '🔷', connector: injected() },
     { id: 'walletconnect', label: 'WalletConnect', desc: 'Mobile & all WC wallets', icon: '🔗', connector: walletConnect({ projectId: WC_PROJECT_ID }) },
   ]
 
@@ -78,8 +91,7 @@ function WalletModal({ onClose }: { onClose: () => void }) {
       await connect({ connector: wallet.connector })
       onClose()
     } catch (e: any) {
-      // fallback: direct ethereum request for injected wallets (mobile Web3 browsers)
-      if (wallet.id === 'metamask' || wallet.id === 'zerion') {
+      if (['metamask', 'rabby', 'zerion'].includes(wallet.id)) {
         try {
           const eth = (window as any).ethereum
           if (!eth) throw new Error("No wallet found — open this site inside your wallet's browser")
@@ -198,11 +210,13 @@ function CreateModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
         const accounts: string[] = await eth.request({ method: 'eth_requestAccounts' })
         setStatus('Step 1/2: Approving RSTT...')
         const approveData = encodeFunctionData({ abi: MOCK_STT_ABI, functionName: 'approve', args: [REACT_PAY_ADDRESS, amt] })
-        const appTx = await eth.request({ method: 'eth_sendTransaction', params: [{ from: accounts[0], to: MOCK_STT_ADDRESS, data: approveData, gas: '0x7A120', gasPrice: '0x77359400' }] })
+        const approveGas = await estimateGas(eth, { from: accounts[0], to: MOCK_STT_ADDRESS, data: approveData })
+        const appTx = await eth.request({ method: 'eth_sendTransaction', params: [{ from: accounts[0], to: MOCK_STT_ADDRESS, data: approveData, gas: approveGas, gasPrice: '0x77359400' }] })
         await publicClient.waitForTransactionReceipt({ hash: appTx as `0x${string}`, timeout: 120_000 })
         setStatus('Step 2/2: Creating escrow...')
         const createData = encodeFunctionData({ abi: REACT_PAY_ABI, functionName: 'createEscrow', args: [freelancer as `0x${string}`, amt, title, BigInt(300)] })
-        const tx = await eth.request({ method: 'eth_sendTransaction', params: [{ from: accounts[0], to: REACT_PAY_ADDRESS, data: createData, gas: '0x7A120', gasPrice: '0x77359400' }] })
+        const createGas = await estimateGas(eth, { from: accounts[0], to: REACT_PAY_ADDRESS, data: createData })
+        const tx = await eth.request({ method: 'eth_sendTransaction', params: [{ from: accounts[0], to: REACT_PAY_ADDRESS, data: createData, gas: createGas, gasPrice: '0x77359400' }] })
         await publicClient.waitForTransactionReceipt({ hash: tx as `0x${string}`, timeout: 120_000 })
       }
       setStatus('Done! Reactivity is now watching...')
@@ -253,7 +267,8 @@ function DeliverModal({ escrow, onClose, onDone }: { escrow: Escrow; onClose: ()
         const { encodeFunctionData } = await import('viem')
         const data = encodeFunctionData({ abi: REACT_PAY_ABI, functionName: 'deliverWork', args: [escrow.id, hash] })
         const accounts: string[] = await eth.request({ method: 'eth_requestAccounts' })
-        const txHash = await eth.request({ method: 'eth_sendTransaction', params: [{ from: accounts[0], to: REACT_PAY_ADDRESS, data, gas: '0x7A120', gasPrice: '0x77359400' }] })
+        const deliverGas = await estimateGas(eth, { from: accounts[0], to: REACT_PAY_ADDRESS, data })
+        const txHash = await eth.request({ method: 'eth_sendTransaction', params: [{ from: accounts[0], to: REACT_PAY_ADDRESS, data, gas: deliverGas, gasPrice: '0x77359400' }] })
         await publicClient.waitForTransactionReceipt({ hash: txHash as `0x${string}`, timeout: 120_000 })
       }
       setStatus('Delivered! Reactivity will auto-release payment ⚡')
@@ -440,7 +455,8 @@ export default function App() {
         const { encodeFunctionData } = await import('viem')
         const accounts: string[] = await eth.request({ method: 'eth_requestAccounts' })
         const data = encodeFunctionData({ abi: MOCK_STT_ABI, functionName: 'faucet', args: [parseUnits('1000', 18)] })
-        const tx = await eth.request({ method: 'eth_sendTransaction', params: [{ from: accounts[0], to: MOCK_STT_ADDRESS, data, gas: '0x7A120', gasPrice: '0x77359400' }] })
+        const faucetGas = await estimateGas(eth, { from: accounts[0], to: MOCK_STT_ADDRESS, data })
+        const tx = await eth.request({ method: 'eth_sendTransaction', params: [{ from: accounts[0], to: MOCK_STT_ADDRESS, data, gas: faucetGas, gasPrice: '0x77359400' }] })
         await publicClient.waitForTransactionReceipt({ hash: tx as `0x${string}`, timeout: 120_000 })
       }
       fetchRSTT()
@@ -474,7 +490,6 @@ export default function App() {
           .stats-grid > div:last-child { grid-column: span 2; }
           .hero-title { font-size: 26px !important; }
           .bal-stt { display: none !important; }
-          .bal-rstt { display: none !important; }
         }
       `}</style>
 
