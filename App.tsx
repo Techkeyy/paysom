@@ -94,7 +94,8 @@ function WalletModal({ onClose }: { onClose: () => void }) {
 
   const wallets = [
     { id: 'metamask', label: 'MetaMask', desc: 'Browser extension wallet', icon: '🦊', connector: injected() },
-    { id: 'other', label: 'Other Wallets', desc: 'Rabby, Zerion & more', icon: '🔌', connector: injected() },
+    { id: 'rabby', label: 'Rabby', desc: 'Browser extension wallet', icon: '🐰', connector: injected() },
+    { id: 'zerion', label: 'Zerion', desc: 'Browser extension wallet', icon: '🔷', connector: injected() },
     { id: 'walletconnect', label: 'WalletConnect', desc: 'Mobile & all WC wallets', icon: '🔗', connector: walletConnect({ projectId: WC_PROJECT_ID }) },
   ]
 
@@ -105,7 +106,7 @@ function WalletModal({ onClose }: { onClose: () => void }) {
       await connect({ connector: wallet.connector })
       onClose()
     } catch (e: any) {
-      if (['metamask', 'other'].includes(wallet.id)) {
+      if (['metamask', 'rabby', 'zerion'].includes(wallet.id)) {
         try {
           const eth = await waitForEthereum()
           if (!eth) throw new Error("No wallet found — open this site inside your wallet's browser")
