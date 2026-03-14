@@ -1,6 +1,6 @@
 import { defineChain } from 'viem'
 import { createConfig, http } from 'wagmi'
-import { injected, walletConnect, coinbaseWallet } from 'wagmi/connectors'
+import { injected, walletConnect } from 'wagmi/connectors'
 
 export const somniaTestnet = defineChain({
   id: 50312, name: 'Somnia Testnet', network: 'somnia-testnet',
@@ -15,9 +15,10 @@ export const somniaTestnet = defineChain({
 export const wagmiConfig = createConfig({
   chains: [somniaTestnet],
   connectors: [
+    injected({ target: 'metaMask' }),
+    injected({ target: 'rabby' }),
     injected(),
     walletConnect({ projectId: 'b8a1daa2dd22335f4e2a5a2d3c9d9e1f' }),
-    coinbaseWallet({ appName: 'ReactPay' }),
   ],
   transports: { [somniaTestnet.id]: http('https://dream-rpc.somnia.network') },
   reconnectOnMount: false,
