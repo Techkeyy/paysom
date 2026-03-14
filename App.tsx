@@ -66,8 +66,8 @@ function WalletModal({ onClose }: { onClose: () => void }) {
   const [err, setErr] = useState('')
 
   const wallets = [
-    { id: 'metamask', label: 'MetaMask', desc: 'Browser extension wallet', icon: '🦊', connector: injected() },
-    { id: 'rabby', label: 'Rabby', desc: 'Browser extension wallet', icon: '🐰', connector: injected() },
+    { id: 'metamask', label: 'MetaMask', desc: 'Browser extension wallet', icon: '🦊', connector: injected({ target: 'metaMask' }) },
+    { id: 'rabby', label: 'Rabby', desc: 'Browser extension wallet', icon: '🐰', connector: injected({ target: 'rabby' }) },
     { id: 'zerion', label: 'Zerion', desc: 'Browser extension wallet', icon: '🔷', connector: injected() },
     { id: 'walletconnect', label: 'WalletConnect', desc: 'Mobile & all WC wallets', icon: '🔗', connector: walletConnect({ projectId: WC_PROJECT_ID }) },
   ]
@@ -77,6 +77,7 @@ function WalletModal({ onClose }: { onClose: () => void }) {
     setErr('')
     try {
       await connect({ connector: wallet.connector })
+      await new Promise(r => setTimeout(r, 500))
       onClose()
     } catch (e: any) {
       if (wallet.id === 'metamask' || wallet.id === 'rabby' || wallet.id === 'zerion') {
@@ -84,6 +85,7 @@ function WalletModal({ onClose }: { onClose: () => void }) {
           const eth = (window as any).ethereum
           if (!eth) throw new Error('No wallet found — open this site inside your wallet\'s browser')
           await eth.request({ method: 'eth_requestAccounts' })
+          await new Promise(r => setTimeout(r, 500))
           onClose()
           return
         } catch (e2: any) {
@@ -501,7 +503,6 @@ export default function App() {
       </header>
 
       <main style={{ maxWidth: 1100, margin: '0 auto', padding: '24px 16px' }}>
-
         {isConnected && !gasBannerDismissed && (
           <GasBanner sttBal={sttBalRaw} onDismiss={() => setGasBannerDismissed(true)} />
         )}
