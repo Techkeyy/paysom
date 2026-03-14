@@ -23,15 +23,30 @@ const publicClient = createPublicClient({ chain: somniaTestnet, transport: http(
 
 const WC_PROJECT_ID = 'b8a1daa2dd22335f4e2a5a2d3c9d9e1f'
 
-// helper: estimate gas or fall back to default
+async function waitForEthereum(timeout = 3000): Promise<any> {
+  return new Promise((resolve) => {
+    if ((window as any).ethereum) return resolve((window as any).ethereum)
+    let elapsed = 0
+    const interval = setInterval(() => {
+      elapsed += 100
+      if ((window as any).ethereum) {
+        clearInterval(interval)
+        resolve((window as any).ethereum)
+      } else if (elapsed >= timeout) {
+        clearInterval(interval)
+        resolve(null)
+      }
+    }, 100)
+  })
+}
+
 async function estimateGas(eth: any, params: { from: string; to: string; data: string }): Promise<string> {
   try {
     const estimate = await eth.request({ method: 'eth_estimateGas', params: [{ ...params, gasPrice: '0x77359400' }] })
-    // add 20% buffer
     const buffered = Math.floor(parseInt(estimate, 16) * 1.2).toString(16)
     return '0x' + buffered
   } catch {
-    return '0x7A120' // fallback 500k gas
+    return '0x7A120'
   }
 }
 
@@ -79,8 +94,7 @@ function WalletModal({ onClose }: { onClose: () => void }) {
 
   const wallets = [
     { id: 'metamask', label: 'MetaMask', desc: 'Browser extension wallet', icon: '🦊', connector: injected() },
-    { id: 'rabby', label: 'Rabby', desc: 'Browser extension wallet', icon: '🐰', connector: injected() },
-    { id: 'zerion', label: 'Zerion', desc: 'Browser extension wallet', icon: '🔷', connector: injected() },
+    { id: 'other', label: 'Other Wallets', desc: 'Rabby, Zerion & more', icon: '🔌', connector: injected() },
     { id: 'walletconnect', label: 'WalletConnect', desc: 'Mobile & all WC wallets', icon: '🔗', connector: walletConnect({ projectId: WC_PROJECT_ID }) },
   ]
 
@@ -91,9 +105,9 @@ function WalletModal({ onClose }: { onClose: () => void }) {
       await connect({ connector: wallet.connector })
       onClose()
     } catch (e: any) {
-      if (['metamask', 'rabby', 'zerion'].includes(wallet.id)) {
+      if (['metamask', 'other'].includes(wallet.id)) {
         try {
-          const eth = (window as any).ethereum
+          const eth = await waitForEthereum()
           if (!eth) throw new Error("No wallet found — open this site inside your wallet's browser")
           await eth.request({ method: 'eth_requestAccounts' })
           onClose()
@@ -536,48 +550,4 @@ export default function App() {
           ].map(({ label, value, color }) => (
             <div key={label} style={{ background: T.surface, border: '1px solid #1E2D3D', borderRadius: 14, padding: '14px 16px' }}>
               <div style={{ fontSize: 10, color: T.muted, fontFamily: T.mono, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>{label}</div>
-              <div style={{ fontSize: 24, fontWeight: 800, color, fontFamily: T.mono }}>{value}</div>
-            </div>
-          ))}
-        </div>
-
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, gap: 10 }}>
-          <div style={{ display: 'flex', gap: 4 }}>
-            {(['all', 'mine'] as const).map(t => (
-              <Btn key={t} onClick={() => setTab(t)} style={{ padding: '7px 14px', borderRadius: 99, cursor: 'pointer', background: tab === t ? T.accentDim : 'transparent', border: `1px solid ${tab === t ? T.accentMid : T.border}`, color: tab === t ? T.accent : T.muted, fontSize: 11, fontWeight: 700, fontFamily: T.mono, textTransform: 'uppercase' }}>
-                {t === 'all' ? `All (${escrows.length})` : `Mine (${escrows.filter(e => address && (e.client.toLowerCase() === address.toLowerCase() || e.freelancer.toLowerCase() === address.toLowerCase())).length})`}
-              </Btn>
-            ))}
-          </div>
-          {isConnected && <Btn onClick={() => setShowCreate(true)} style={{ padding: '10px 18px', borderRadius: 99, background: T.accent, color: '#0A0E14', border: 'none', fontWeight: 800, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' }}>⚡ New Escrow</Btn>}
-        </div>
-
-        {loading && <div style={{ textAlign: 'center', padding: 40, color: T.muted, fontFamily: T.mono }}>Loading...</div>}
-
-        {!loading && visible.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '60px 20px', background: T.surface, border: '1px solid #1E2D3D', borderRadius: 16 }}>
-            <div style={{ fontSize: 40, marginBottom: 12 }}>⚡</div>
-            <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>No escrows yet</div>
-            <div style={{ fontSize: 13, color: T.muted, marginBottom: 20 }}>{isConnected ? 'Create your first trustless escrow' : 'Connect your wallet to get started'}</div>
-            {isConnected && <Btn onClick={() => setShowCreate(true)} style={{ padding: '10px 22px', borderRadius: 99, background: T.accent, color: '#0A0E14', border: 'none', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>Create Escrow</Btn>}
-            {!isConnected && <Btn onClick={() => setShowWallet(true)} style={{ padding: '10px 22px', borderRadius: 99, background: T.accent, color: '#0A0E14', border: 'none', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>Connect Wallet</Btn>}
-          </div>
-        )}
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {visible.map(e => (
-            <EscrowCard key={e.id.toString()} escrow={e} myAddress={address} onDeliver={() => setDeliverEscrow(e)} onRefresh={() => { fetchAll(); fetchRSTT() }} />
-          ))}
-        </div>
-
-        <div style={{ marginTop: 48, paddingTop: 20, borderTop: '1px solid #1E2D3D', display: 'flex', justifyContent: 'space-between', fontSize: 10, color: T.muted, fontFamily: T.mono, flexWrap: 'wrap', gap: 8 }}>
-          <span>REACTPAY · SOMNIA REACTIVITY HACKATHON 2026</span>
-          <div style={{ display: 'flex', gap: 16 }}>
-            <a href="https://shannon-explorer.somnia.network" target="_blank" rel="noreferrer" style={{ color: T.muted, textDecoration: 'none' }}>EXPLORER ↗</a>
-            <a href="https://docs.somnia.network" target="_blank" rel="noreferrer" style={{ color: T.muted, textDecoration: 'none' }}>DOCS ↗</a>
-          </div>
-        </div>
-      </main>
-    </div>
-  )
-}
+              <div style={{ fontSize: 24, fontWeight: 800, color, fontF
