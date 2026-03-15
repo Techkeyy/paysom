@@ -309,6 +309,19 @@ function Field({ label, value, onChange, placeholder, type = 'text', hint }: { l
   )
 }
 
+// ─── Gas estimation helper for raw eth_sendTransaction fallback paths ──────────
+// Wallets like Rabby reject transactions with gas: 0x0 (no estimate).
+// Estimates via eth_estimateGas + 30% buffer; falls back to 300k if RPC rejects.
+async function estimateGas(eth: any, tx: { from: string; to: string; data: string }): Promise<string> {
+  try {
+    const raw: string = await eth.request({ method: 'eth_estimateGas', params: [tx] })
+    const buffered = Math.ceil(parseInt(raw, 16) * 1.3)
+    return '0x' + buffered.toString(16)
+  } catch {
+    return '0x493E0' // 300_000 — safe default for any contract interaction
+  }
+}
+
 function CreateModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const { data: wc } = useWalletClient()
   const [title, setTitle] = useState('')
@@ -338,11 +351,15 @@ function CreateModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
         const accounts: string[] = await eth.request({ method: 'eth_requestAccounts' })
         setStatus('Step 1/2: Approving RSTT...')
         const approveData = encodeFunctionData({ abi: MOCK_STT_ABI, functionName: 'approve', args: [REACT_PAY_ADDRESS, amt] })
-        const appTx = await eth.request({ method: 'eth_sendTransaction', params: [{ from: accounts[0], to: MOCK_STT_ADDRESS, data: approveData }] })
+        const approveTx = { from: accounts[0], to: MOCK_STT_ADDRESS, data: approveData }
+        const appGas = await estimateGas(eth, approveTx)
+        const appTx = await eth.request({ method: 'eth_sendTransaction', params: [{ ...approveTx, gas: appGas }] })
         await publicClient.waitForTransactionReceipt({ hash: appTx as `0x${string}`, timeout: 120_000 })
         setStatus('Step 2/2: Creating escrow...')
         const createData = encodeFunctionData({ abi: REACT_PAY_ABI, functionName: 'createEscrow', args: [freelancer as `0x${string}`, amt, title, BigInt(300)] })
-        const tx = await eth.request({ method: 'eth_sendTransaction', params: [{ from: accounts[0], to: REACT_PAY_ADDRESS, data: createData }] })
+        const createTx = { from: accounts[0], to: REACT_PAY_ADDRESS, data: createData }
+        const createGas = await estimateGas(eth, createTx)
+        const tx = await eth.request({ method: 'eth_sendTransaction', params: [{ ...createTx, gas: createGas }] })
         await publicClient.waitForTransactionReceipt({ hash: tx as `0x${string}`, timeout: 120_000 })
       }
       setStatus('Done! Reactivity is now watching...')
@@ -393,7 +410,9 @@ function DeliverModal({ escrow, onClose, onDone }: { escrow: Escrow; onClose: ()
         const { encodeFunctionData } = await import('viem')
         const data = encodeFunctionData({ abi: REACT_PAY_ABI, functionName: 'deliverWork', args: [escrow.id, hash] })
         const accounts: string[] = await eth.request({ method: 'eth_requestAccounts' })
-        const txHash = await eth.request({ method: 'eth_sendTransaction', params: [{ from: accounts[0], to: REACT_PAY_ADDRESS, data }] })
+        const deliverTx = { from: accounts[0], to: REACT_PAY_ADDRESS, data }
+        const gas = await estimateGas(eth, deliverTx)
+        const txHash = await eth.request({ method: 'eth_sendTransaction', params: [{ ...deliverTx, gas }] })
         await publicClient.waitForTransactionReceipt({ hash: txHash as `0x${string}`, timeout: 120_000 })
       }
       setStatus('Delivered! Reactivity will auto-release payment ⚡️')
@@ -644,7 +663,9 @@ export default function App() {
         const { encodeFunctionData } = await import('viem')
         const accounts: string[] = await eth.request({ method: 'eth_requestAccounts' })
         const data = encodeFunctionData({ abi: MOCK_STT_ABI, functionName: 'faucet', args: [parseUnits('1000', 18)] })
-        const tx = await eth.request({ method: 'eth_sendTransaction', params: [{ from: accounts[0], to: MOCK_STT_ADDRESS, data }] })
+        const faucetTx = { from: accounts[0], to: MOCK_STT_ADDRESS, data }
+        const gas = await estimateGas(eth, faucetTx)
+        const tx = await eth.request({ method: 'eth_sendTransaction', params: [{ ...faucetTx, gas }] })
         await publicClient.waitForTransactionReceipt({ hash: tx as `0x${string}`, timeout: 120_000 })
       }
       fetchRSTT()
