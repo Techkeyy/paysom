@@ -28,203 +28,238 @@ interface Escrow {
   deliveredBlock: bigint; disputeWindow: bigint
 }
 
-function Btn({ onClick, disabled, style, children }: { onClick?: () => void; disabled?: boolean; style?: React.CSSProperties; children: React.ReactNode }) {
+// ─── Shared helpers ───────────────────────────────────────────────────────────
+function Btn({ onClick, disabled, style, children }: {
+  onClick?: () => void; disabled?: boolean
+  style?: React.CSSProperties; children: React.ReactNode
+}) {
   const [pressed, setPressed] = useState(false)
   return (
     <button onClick={onClick} disabled={disabled}
-      onMouseDown={() => setPressed(true)} onMouseUp={() => setPressed(false)} onMouseLeave={() => setPressed(false)}
-      style={{ ...style, transform: pressed && !disabled ? 'scale(0.95)' : 'scale(1)', boxShadow: pressed && !disabled ? `0 0 16px ${T.accent}50` : 'none', transition: 'transform 0.1s, box-shadow 0.1s, filter 0.15s, opacity 0.15s' }}
+      onMouseDown={() => setPressed(true)}
+      onMouseUp={() => setPressed(false)}
+      onMouseLeave={() => setPressed(false)}
+      style={{
+        ...style,
+        transform: pressed && !disabled ? 'scale(0.95)' : 'scale(1)',
+        boxShadow: pressed && !disabled ? `0 0 16px ${T.accent}50` : 'none',
+        transition: 'transform 0.1s, box-shadow 0.1s, filter 0.15s, opacity 0.15s',
+      }}
     >{children}</button>
   )
 }
 
 function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   return (
-    <div onClick={onClose} className="modal-overlay" style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div onClick={e => e.stopPropagation()} className="modal-inner" style={{ background: '#0F1520', border: '1px solid #1E2D3D', borderRadius: 20, padding: 28, width: '100%', maxWidth: 520, maxHeight: '90vh', overflowY: 'auto' }}>
+    <div onClick={onClose} className="modal-overlay"
+      style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div onClick={e => e.stopPropagation()} className="modal-inner"
+        style={{ background: '#0F1520', border: '1px solid #1E2D3D', borderRadius: 20, padding: 28, width: '100%', maxWidth: 520, maxHeight: '90vh', overflowY: 'auto' }}>
         {children}
       </div>
     </div>
   )
 }
 
-// ─── Detect which injected wallets are actually present ───────────────────────
-function detectInjectedWallets(): { id: string; label: string; desc: string; icon: string }[] {
-  const eth = (window as any).ethereum
-  if (!eth) return []
-
-  const found: { id: string; label: string; desc: string; icon: string }[] = []
-  const providers: any[] = eth.providers ?? [eth]
-
-  for (const p of providers) {
-    if (p.isRabby)         { found.push({ id: 'rabby',    label: 'Rabby',          desc: 'Detected browser extension', icon: '🐰' }); continue }
-    if (p.isBraveWallet)   { found.push({ id: 'brave',    label: 'Brave Wallet',   desc: 'Detected browser extension', icon: '🦁' }); continue }
-    if (p.isCoinbaseWallet){ found.push({ id: 'coinbase', label: 'Coinbase Wallet',desc: 'Detected browser extension', icon: '🔵' }); continue }
-    if (p.isTrust)         { found.push({ id: 'trust',    label: 'Trust Wallet',   desc: 'Detected browser extension', icon: '🛡️' }); continue }
-    if (p.isMetaMask)      { found.push({ id: 'metamask', label: 'MetaMask',       desc: 'Detected browser extension', icon: '🦊' }); continue }
-    found.push({ id: 'injected', label: 'Browser Wallet', desc: 'Detected browser extension', icon: '🌐' })
+// Gas estimation — wallets like Rabby reject txs with gas:0x0
+async function estimateGas(eth: any, tx: { from: string; to: string; data: string }): Promise<string> {
+  try {
+    const raw: string = await eth.request({ method: 'eth_estimateGas', params: [tx] })
+    const buffered = Math.ceil(parseInt(raw, 16) * 1.3)
+    return '0x' + buffered.toString(16)
+  } catch {
+    return '0x493E0' // 300_000 safe fallback
   }
+}
 
-  return found.filter((w, i, arr) => arr.findIndex(x => x.id === w.id) === i)
+// Hard disconnect: wagmi + raw permission revoke
+async function hardDisconnect(wagmiDisconnect: () => void) {
+  // 1. wagmi clears its connector + localStorage
+  wagmiDisconnect()
+  // 2. Revoke at the extension level so it forgets us entirely
+  try {
+    const eth = (window as any).ethereum
+    if (eth?.request) {
+      await eth.request({ method: 'wallet_revokePermissions', params: [{ eth_accounts: {} }] })
+    }
+  } catch {
+    // wallet_revokePermissions unsupported on some wallets — ignore
+  }
+  // 3. Nuke wagmi's persisted storage so it can't auto-reconnect
+  try {
+    Object.keys(localStorage).forEach(k => {
+      if (k.startsWith('wagmi') || k.includes('wallet') || k.includes('connector')) {
+        localStorage.removeItem(k)
+      }
+    })
+  } catch {}
 }
 
 // ─── WALLET MODAL ─────────────────────────────────────────────────────────────
+// Static wallet list — always shown regardless of what's installed.
+// Using generic injected() for all of them so the wallet picker
+// itself decides which extension to use (avoids the MetaMask target bug).
+const WALLET_LIST = [
+  { id: 'metamask',  label: 'MetaMask',       desc: 'Browser extension',       icon: '🦊' },
+  { id: 'rabby',     label: 'Rabby',           desc: 'Browser extension',       icon: '🐰' },
+  { id: 'coinbase',  label: 'Coinbase Wallet', desc: 'Browser extension',       icon: '🔵' },
+  { id: 'trust',     label: 'Trust Wallet',    desc: 'Browser / mobile wallet', icon: '🛡️' },
+  { id: 'brave',     label: 'Brave Wallet',    desc: 'Browser built-in',        icon: '🦁' },
+  { id: 'walletconnect', label: 'WalletConnect', desc: 'Mobile & all WC wallets', icon: '🔗' },
+]
+
 function WalletModal({ onClose }: { onClose: () => void }) {
   const { connect } = useConnect()
   const { disconnect } = useDisconnect()
   const { isConnected } = useAccount()
   const [connecting, setConnecting] = useState<string | null>(null)
   const [err, setErr] = useState('')
-  const closedRef = useRef(false)
+  const didClose = useRef(false)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const [injectedWallets] = useState(() => {
-    if (typeof window === 'undefined') return []
-    return detectInjectedWallets()
-  })
-
-  // Close as soon as wagmi confirms connection
+  // Auto-close as soon as wagmi confirms connection
   useEffect(() => {
-    if (isConnected && connecting && !closedRef.current) {
-      closedRef.current = true
+    if (isConnected && connecting && !didClose.current) {
+      didClose.current = true
       if (timeoutRef.current) clearTimeout(timeoutRef.current)
       setTimeout(onClose, 250)
     }
   }, [isConnected, connecting, onClose])
 
-  // Cleanup on unmount
   useEffect(() => () => { if (timeoutRef.current) clearTimeout(timeoutRef.current) }, [])
 
-  async function handleInjected(walletId: string) {
+  async function tryConnect(walletId: string) {
     if (connecting) return
     setConnecting(walletId)
     setErr('')
 
-    // Always fully clear previous session first
-    await disconnect()
-    await new Promise(r => setTimeout(r, 150))
+    // Always fully wipe previous session before connecting
+    await hardDisconnect(disconnect)
+    await new Promise(r => setTimeout(r, 200))
 
-    // 15s timeout guard — prevents infinite spinner
+    // 15s watchdog — prevents infinite spinner
     timeoutRef.current = setTimeout(() => {
-      if (!closedRef.current) {
+      if (!didClose.current) {
         setConnecting(null)
-        setErr("Wallet didn't respond within 15s. Make sure the extension is unlocked, then try again.")
+        setErr("Wallet didn't respond. Make sure the extension is unlocked and try again.")
       }
     }, 15_000)
 
+    if (walletId === 'walletconnect') {
+      try {
+        connect({ connector: walletConnect({ projectId: WC_PROJECT_ID, showQrModal: true }) })
+        // WalletConnect opens its own QR modal — isConnected effect will close ours
+      } catch (e: any) {
+        if (timeoutRef.current) clearTimeout(timeoutRef.current)
+        setErr(e?.message ?? 'WalletConnect failed')
+        setConnecting(null)
+      }
+      return
+    }
+
+    // All browser wallets: use generic injected() which triggers window.ethereum
+    // directly — no target fingerprinting that can stall
     try {
-      const connector = injected()
-      await connect({ connector })
-      // success → isConnected effect closes the modal
+      await connect({ connector: injected() })
+      // success → isConnected effect closes modal
     } catch (e: any) {
       if (timeoutRef.current) clearTimeout(timeoutRef.current)
       const msg: string = e?.message ?? e?.shortMessage ?? ''
-      // User rejected — silent reset, no error shown
+      // User pressed Cancel/Reject in wallet — silent reset
       if (msg.toLowerCase().includes('rejected') || msg.toLowerCase().includes('denied') || e?.code === 4001) {
         setConnecting(null)
         return
       }
-      // Fallback: raw eth_requestAccounts
+      // Last-resort: raw eth_requestAccounts
       try {
         const eth = (window as any).ethereum
-        if (!eth) throw new Error('No wallet extension found. Install one and refresh the page.')
+        if (!eth) throw new Error('No wallet extension found. Install MetaMask or Rabby, then refresh.')
         await eth.request({ method: 'eth_requestAccounts' })
-        await new Promise(r => setTimeout(r, 500))
-        if (!closedRef.current) { closedRef.current = true; onClose() }
+        await new Promise(r => setTimeout(r, 600))
+        if (!didClose.current) { didClose.current = true; onClose() }
       } catch (e2: any) {
-        const msg2: string = e2?.message ?? ''
-        if (!msg2.toLowerCase().includes('rejected') && !msg2.toLowerCase().includes('denied')) {
-          setErr(msg2 || 'Connection failed. Make sure your wallet is unlocked.')
+        const m2: string = e2?.message ?? ''
+        if (!m2.toLowerCase().includes('rejected') && !m2.toLowerCase().includes('denied')) {
+          setErr(m2 || 'Connection failed. Make sure your wallet extension is unlocked.')
         }
         setConnecting(null)
       }
     }
   }
 
-  async function handleWalletConnect() {
-    if (connecting) return
-    setConnecting('walletconnect')
-    setErr('')
-    await disconnect()
-    await new Promise(r => setTimeout(r, 150))
-    try {
-      const connector = walletConnect({ projectId: WC_PROJECT_ID, showQrModal: true })
-      connect({ connector })
-    } catch (e: any) {
-      setErr(e?.message ?? 'WalletConnect failed')
-      setConnecting(null)
-    }
-  }
-
-  const noWalletFound = injectedWallets.length === 0
+  const hasEthereum = typeof window !== 'undefined' && !!(window as any).ethereum
 
   return (
     <Modal onClose={onClose}>
+      {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
           <div style={{ fontWeight: 800, fontSize: 18 }}>Connect Wallet</div>
-          <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>
-            {noWalletFound ? 'No browser wallet detected' : 'Choose your wallet to continue'}
-          </div>
+          <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>Choose your wallet to continue</div>
         </div>
-        <button onClick={onClose} style={{ background: 'none', border: 'none', color: T.muted, fontSize: 22, cursor: 'pointer' }}>×</button>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', color: T.muted, fontSize: 22, cursor: 'pointer', lineHeight: 1 }}>×</button>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {injectedWallets.map(wallet => {
-          const isThis = connecting === wallet.id
-          const isOther = !!connecting && connecting !== wallet.id
+      {/* No extension warning */}
+      {!hasEthereum && (
+        <div style={{ padding: '10px 14px', borderRadius: 10, background: T.yellow + '12', border: `1px solid ${T.yellow}35`, fontSize: 12, color: T.yellow, fontFamily: T.mono, marginBottom: 14, lineHeight: 1.6 }}>
+          ⚠️ No wallet extension detected. Install{' '}
+          <a href="https://metamask.io" target="_blank" rel="noreferrer" style={{ color: T.accent }}>MetaMask</a> or{' '}
+          <a href="https://rabby.io" target="_blank" rel="noreferrer" style={{ color: T.accent }}>Rabby</a>{' '}
+          and refresh, or use WalletConnect below.
+        </div>
+      )}
+
+      {/* Wallet list */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {WALLET_LIST.map(w => {
+          const isThis = connecting === w.id
+          const isOther = !!connecting && !isThis
+          const isWC = w.id === 'walletconnect'
+          // Dim non-WC options when no extension present (WC always available)
+          const unavailable = !hasEthereum && !isWC
           return (
-            <button key={wallet.id} onClick={() => handleInjected(wallet.id)} disabled={!!connecting}
-              style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '14px 18px', borderRadius: 14, background: isThis ? T.accentDim : T.surface2, border: `1px solid ${isThis ? T.accentMid : T.border}`, cursor: connecting ? 'not-allowed' : 'pointer', color: T.text, textAlign: 'left', opacity: isOther ? 0.45 : 1, transition: 'all 0.15s' }}>
-              <div style={{ fontSize: 26, width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 12, background: T.surface, border: `1px solid ${T.border}`, flexShrink: 0 }}>
-                {isThis ? '⏳' : wallet.icon}
+            <button key={w.id}
+              onClick={() => !unavailable && tryConnect(w.id)}
+              disabled={!!connecting || unavailable}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 14,
+                padding: '13px 16px', borderRadius: 14,
+                background: isThis ? T.accentDim : T.surface2,
+                border: `1px solid ${isThis ? T.accentMid : T.border}`,
+                cursor: (connecting || unavailable) ? 'not-allowed' : 'pointer',
+                color: T.text, textAlign: 'left',
+                opacity: isOther || unavailable ? 0.4 : 1,
+                transition: 'all 0.15s',
+              }}>
+              {/* Icon */}
+              <div style={{ fontSize: 24, width: 42, height: 42, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 12, background: T.surface, border: `1px solid ${T.border}`, flexShrink: 0 }}>
+                {isThis ? '⏳' : w.icon}
               </div>
+              {/* Labels */}
               <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 700, fontSize: 14 }}>{wallet.label}</div>
-                <div style={{ fontSize: 11, color: T.muted, marginTop: 2, fontFamily: T.mono }}>{wallet.desc}</div>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>{w.label}</div>
+                <div style={{ fontSize: 11, color: T.muted, marginTop: 2, fontFamily: T.mono }}>{w.desc}</div>
               </div>
+              {/* Status */}
               {isThis
-                ? <div style={{ fontSize: 11, color: T.accent, fontFamily: T.mono, flexShrink: 0 }}>Check extension…</div>
-                : <div style={{ color: T.muted, fontSize: 18, flexShrink: 0 }}>›</div>}
+                ? <div style={{ fontSize: 11, color: T.accent, fontFamily: T.mono, flexShrink: 0 }}>
+                    {isWC ? 'Opening QR…' : 'Check wallet…'}
+                  </div>
+                : <div style={{ color: T.muted, fontSize: 18 }}>›</div>}
             </button>
           )
         })}
-
-        {noWalletFound && (
-          <div style={{ padding: '14px 16px', borderRadius: 14, background: T.surface2, border: `1px solid ${T.border}`, fontSize: 12, color: T.muted, lineHeight: 1.6 }}>
-            No wallet extension detected in this browser.<br />
-            Install <a href="https://rabby.io" target="_blank" rel="noreferrer" style={{ color: T.accent }}>Rabby</a> or{' '}
-            <a href="https://metamask.io" target="_blank" rel="noreferrer" style={{ color: T.accent }}>MetaMask</a>,
-            then refresh — or use WalletConnect below to connect a mobile wallet.
-          </div>
-        )}
-
-        {(() => {
-          const isThis = connecting === 'walletconnect'
-          const isOther = !!connecting && connecting !== 'walletconnect'
-          return (
-            <button onClick={handleWalletConnect} disabled={!!connecting}
-              style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '14px 18px', borderRadius: 14, background: isThis ? T.accentDim : T.surface2, border: `1px solid ${isThis ? T.accentMid : T.border}`, cursor: connecting ? 'not-allowed' : 'pointer', color: T.text, textAlign: 'left', opacity: isOther ? 0.45 : 1, transition: 'all 0.15s' }}>
-              <div style={{ fontSize: 26, width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 12, background: T.surface, border: `1px solid ${T.border}`, flexShrink: 0 }}>
-                {isThis ? '⏳' : '🔗'}
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 700, fontSize: 14 }}>WalletConnect</div>
-                <div style={{ fontSize: 11, color: T.muted, marginTop: 2, fontFamily: T.mono }}>Mobile & all WC wallets</div>
-              </div>
-              {isThis
-                ? <div style={{ fontSize: 11, color: T.accent, fontFamily: T.mono, flexShrink: 0 }}>Opening QR…</div>
-                : <div style={{ color: T.muted, fontSize: 18, flexShrink: 0 }}>›</div>}
-            </button>
-          )
-        })()}
       </div>
 
+      {/* Error */}
       {err && (
         <div style={{ marginTop: 14, padding: '10px 14px', borderRadius: 8, background: T.red + '15', border: `1px solid ${T.red}40`, fontSize: 12, color: T.red, fontFamily: T.mono, lineHeight: 1.5 }}>
           ⚠️ {err}
-          <button onClick={() => { setErr(''); setConnecting(null) }} style={{ marginLeft: 10, background: 'none', border: 'none', color: T.red, cursor: 'pointer', fontWeight: 700, fontSize: 12 }}>Retry</button>
+          <button onClick={() => { setErr(''); setConnecting(null) }}
+            style={{ marginLeft: 10, background: 'none', border: 'none', color: T.red, cursor: 'pointer', fontWeight: 700, fontSize: 12 }}>
+            Retry
+          </button>
         </div>
       )}
 
@@ -243,12 +278,9 @@ function NetworkModal({ onClose, onSwitch }: { onClose: () => void; onSwitch: ()
 
   async function doSwitch() {
     setBusy(true); setErr('')
-    try {
-      await onSwitch()
-      onClose()
-    } catch (e: any) {
-      setErr(e?.message ?? 'Failed to switch network')
-    } finally { setBusy(false) }
+    try { await onSwitch(); onClose() }
+    catch (e: any) { setErr(e?.message ?? 'Failed to switch network') }
+    finally { setBusy(false) }
   }
 
   return (
@@ -272,6 +304,7 @@ function NetworkModal({ onClose, onSwitch }: { onClose: () => void; onSwitch: ()
   )
 }
 
+// ─── GAS BANNER ───────────────────────────────────────────────────────────────
 function GasBanner({ sttBal, onDismiss }: { sttBal: bigint; onDismiss: () => void }) {
   if (sttBal >= BigInt('10000000000000000')) return null
   return (
@@ -288,29 +321,22 @@ function GasBanner({ sttBal, onDismiss }: { sttBal: bigint; onDismiss: () => voi
   )
 }
 
-function Field({ label, value, onChange, placeholder, type = 'text', hint }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: string; hint?: string }) {
+// ─── FIELD ────────────────────────────────────────────────────────────────────
+function Field({ label, value, onChange, placeholder, type = 'text', hint }: {
+  label: string; value: string; onChange: (v: string) => void
+  placeholder?: string; type?: string; hint?: string
+}) {
   return (
     <div style={{ marginBottom: 14 }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6, fontFamily: T.mono }}>{label}</div>
-      <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1px solid #1E2D3D', background: '#141C28', color: '#E2EAF0', fontSize: 13, fontFamily: T.mono, outline: 'none', boxSizing: 'border-box' }} />
+      <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+        style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1px solid #1E2D3D', background: '#141C28', color: '#E2EAF0', fontSize: 13, fontFamily: T.mono, outline: 'none', boxSizing: 'border-box' }} />
       {hint && <div style={{ fontSize: 10, color: T.muted, marginTop: 4 }}>{hint}</div>}
     </div>
   )
 }
 
-// ─── Gas estimation helper ────────────────────────────────────────────────────
-// Wallets like Rabby reject txs with gas: 0x0. We estimate + add 30% buffer.
-// Falls back to 300k if the RPC rejects the simulation.
-async function estimateGas(eth: any, tx: { from: string; to: string; data: string }): Promise<string> {
-  try {
-    const raw: string = await eth.request({ method: 'eth_estimateGas', params: [tx] })
-    const buffered = Math.ceil(parseInt(raw, 16) * 1.3)
-    return '0x' + buffered.toString(16)
-  } catch {
-    return '0x493E0' // 300_000 safe default
-  }
-}
-
+// ─── CREATE MODAL ─────────────────────────────────────────────────────────────
 function CreateModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const { data: wc } = useWalletClient()
   const [title, setTitle] = useState('')
@@ -377,6 +403,7 @@ function CreateModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
   )
 }
 
+// ─── DELIVER MODAL ────────────────────────────────────────────────────────────
 function DeliverModal({ escrow, onClose, onDone }: { escrow: Escrow; onClose: () => void; onDone: () => void }) {
   const { data: wc } = useWalletClient()
   const [input, setInput] = useState('')
@@ -434,6 +461,7 @@ function DeliverModal({ escrow, onClose, onDone }: { escrow: Escrow; onClose: ()
   )
 }
 
+// ─── BADGE ────────────────────────────────────────────────────────────────────
 function Badge({ state }: { state: number }) {
   const name = getStateName(state)
   const color = stateColor(state)
@@ -445,7 +473,10 @@ function Badge({ state }: { state: number }) {
   )
 }
 
-function EscrowCard({ escrow, myAddress, onDeliver, onRefresh }: { escrow: Escrow; myAddress?: string; onDeliver: () => void; onRefresh: () => void }) {
+// ─── ESCROW CARD ──────────────────────────────────────────────────────────────
+function EscrowCard({ escrow, myAddress, onDeliver, onRefresh }: {
+  escrow: Escrow; myAddress?: string; onDeliver: () => void; onRefresh: () => void
+}) {
   const { data: wc } = useWalletClient()
   const [expanded, setExpanded] = useState(false)
   const state = getStateName(escrow.state)
@@ -464,7 +495,8 @@ function EscrowCard({ escrow, myAddress, onDeliver, onRefresh }: { escrow: Escro
 
   return (
     <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 16, borderLeft: `3px solid ${color}`, overflow: 'hidden' }}>
-      <button onClick={() => setExpanded(e => !e)} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: 'transparent', border: 'none', cursor: 'pointer', color: T.text, textAlign: 'left' }}>
+      <button onClick={() => setExpanded(e => !e)}
+        style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: 'transparent', border: 'none', cursor: 'pointer', color: T.text, textAlign: 'left' }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontWeight: 700, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{escrow.title || `Escrow #${escrow.id}`}</div>
           <div style={{ fontSize: 11, color: T.muted, fontFamily: T.mono, marginTop: 2 }}>{fmt(escrow.amount)} RSTT</div>
@@ -516,27 +548,25 @@ function AccountMenu({ address, onClose, onSwitchWallet, onDisconnect, onSwitchN
 }) {
   return (
     <>
+      {/* Click-away backdrop */}
       <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 99 }} />
       <div className="account-menu" style={{ zIndex: 100 }}>
         <div style={{ padding: '8px 12px 10px', borderBottom: `1px solid ${T.border}`, marginBottom: 4 }}>
           <div style={{ fontSize: 9, color: T.muted, fontFamily: T.mono, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>Connected as</div>
           <div style={{ fontSize: 11, color: T.accent, fontFamily: T.mono, wordBreak: 'break-all' }}>{address}</div>
         </div>
-
         {isWrongNetwork && (
           <button onClick={() => { onClose(); onSwitchNetwork() }}
             style={{ width: '100%', padding: '9px 12px', borderRadius: 8, background: T.red + '12', border: 'none', color: T.red, fontSize: 12, fontWeight: 700, cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
             🌐 Switch to Somnia Testnet
           </button>
         )}
-
         <button onClick={() => { onClose(); onSwitchWallet() }}
           style={{ width: '100%', padding: '9px 12px', borderRadius: 8, background: 'transparent', border: 'none', color: T.text, fontSize: 12, fontWeight: 600, cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8 }}>
           🔄 Switch Wallet
         </button>
-
         <button onClick={onDisconnect}
-          style={{ width: '100%', padding: '9px 12px', borderRadius: 8, background: 'transparent', border: 'none', color: T.red, fontSize: 12, fontWeight: 600, cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8 }}>
+          style={{ width: '100%', padding: '9px 12px', borderRadius: 8, background: T.red + '10', border: 'none', color: T.red, fontSize: 12, fontWeight: 700, cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8 }}>
           ⏏️ Disconnect
         </button>
       </div>
@@ -565,7 +595,7 @@ export default function App() {
 
   const isWrongNetwork = isConnected && chainId !== somniaTestnet.id
 
-  // ── Network switching ──────────────────────────────────────────────────────
+  // ── Network ────────────────────────────────────────────────────────────────
   async function switchNetwork() {
     const eth = (window as any).ethereum
     if (!eth) throw new Error('No wallet provider found')
@@ -575,21 +605,15 @@ export default function App() {
       if (e.code === 4902 || e.code === -32603) {
         await eth.request({
           method: 'wallet_addEthereumChain',
-          params: [{
-            chainId: '0xC488', chainName: 'Somnia Testnet',
-            nativeCurrency: { name: 'Somnia Test Token', symbol: 'STT', decimals: 18 },
-            rpcUrls: ['https://dream-rpc.somnia.network'],
-            blockExplorerUrls: ['https://shannon-explorer.somnia.network'],
-          }],
+          params: [{ chainId: '0xC488', chainName: 'Somnia Testnet', nativeCurrency: { name: 'Somnia Test Token', symbol: 'STT', decimals: 18 }, rpcUrls: ['https://dream-rpc.somnia.network'], blockExplorerUrls: ['https://shannon-explorer.somnia.network'] }],
         })
       } else { throw e }
     }
   }
 
-  // Show network modal whenever on wrong chain
   useEffect(() => { if (isWrongNetwork) setShowNetworkModal(true) }, [isWrongNetwork])
 
-  // ── Data fetching ──────────────────────────────────────────────────────────
+  // ── Data ───────────────────────────────────────────────────────────────────
   const fetchAll = useCallback(async (showLoader = false) => {
     if (showLoader) setLoading(true)
     try {
@@ -639,40 +663,18 @@ export default function App() {
   }
 
   // ── Disconnect ─────────────────────────────────────────────────────────────
-  // Two-step: wagmi disconnect clears its state, then wallet_revokePermissions
-  // tells the extension itself to forget the connection so the UI fully resets.
   async function handleDisconnect() {
     setShowAccountMenu(false)
     setRsttBal(0n)
-
-    // Step 1 — wagmi internal state + localStorage
-    await disconnect()
-
-    // Step 2 — revoke extension permission so wallet forgets us
-    // (wallet_revokePermissions is supported by MetaMask, Rabby, and most modern wallets)
-    try {
-      const eth = (window as any).ethereum
-      if (eth) await eth.request({ method: 'wallet_revokePermissions', params: [{ eth_accounts: {} }] })
-    } catch {
-      // Not all wallets support this — safe to swallow
-    }
+    await hardDisconnect(disconnect)
   }
 
   // ── Switch wallet ──────────────────────────────────────────────────────────
   async function handleSwitchWallet() {
     setShowAccountMenu(false)
     setRsttBal(0n)
-    await disconnect()
-    try {
-      const eth = (window as any).ethereum
-      if (eth) await eth.request({ method: 'wallet_revokePermissions', params: [{ eth_accounts: {} }] })
-    } catch {}
-    await new Promise(r => setTimeout(r, 150))
-    setShowWallet(true)
-  }
-
-  // ── Connect wallet button — always show picker ─────────────────────────────
-  function handleOpenWalletModal() {
+    await hardDisconnect(disconnect)
+    await new Promise(r => setTimeout(r, 200))
     setShowWallet(true)
   }
 
@@ -695,7 +697,7 @@ export default function App() {
         .header-connected { display: flex; gap: 8px; align-items: center; }
         .bal-rstt { padding: 6px 10px; border-radius: 8px; background: #141C28; border: 1px solid #1E2D3D; font-size: 11px; font-family: 'JetBrains Mono', monospace; color: #4A6680; white-space: nowrap; }
         .bal-stt  { padding: 6px 10px; border-radius: 8px; background: #141C28; border: 1px solid #1E2D3D; font-size: 11px; font-family: 'JetBrains Mono', monospace; color: #4A6680; white-space: nowrap; }
-        .account-menu { position: absolute; top: 54px; right: 16px; background: #0F1520; border: 1px solid #1E2D3D; border-radius: 14px; padding: 8px; min-width: 220px; z-index: 100; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
+        .account-menu { position: absolute; top: 54px; right: 16px; background: #0F1520; border: 1px solid #1E2D3D; border-radius: 14px; padding: 8px; min-width: 220px; z-index: 100; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
         @media (max-width: 600px) {
           .modal-overlay { align-items: flex-end !important; }
           .modal-inner { border-radius: 20px 20px 0 0 !important; }
@@ -713,6 +715,7 @@ export default function App() {
       {deliverEscrow   && <DeliverModal escrow={deliverEscrow} onClose={() => setDeliverEscrow(null)} onDone={() => { fetchAll(); fetchRSTT() }} />}
       {showNetworkModal && <NetworkModal onClose={() => setShowNetworkModal(false)} onSwitch={switchNetwork} />}
 
+      {/* ── Header ── */}
       <header style={{ position: 'sticky', top: 0, zIndex: 50, height: 62, borderBottom: '1px solid #1E2D3D', background: '#0F1520EE', backdropFilter: 'blur(20px)', padding: '0 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ width: 36, height: 36, borderRadius: 12, background: '#4FFFB020', border: '1px solid #4FFFB030', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>⚡️</div>
@@ -742,13 +745,18 @@ export default function App() {
                 ✓ {short(address ?? '')} ▾
               </Btn>
               {showAccountMenu && (
-                <AccountMenu address={address ?? ''} onClose={() => setShowAccountMenu(false)}
-                  onSwitchWallet={handleSwitchWallet} onDisconnect={handleDisconnect}
-                  onSwitchNetwork={() => setShowNetworkModal(true)} isWrongNetwork={isWrongNetwork} />
+                <AccountMenu
+                  address={address ?? ''}
+                  onClose={() => setShowAccountMenu(false)}
+                  onSwitchWallet={handleSwitchWallet}
+                  onDisconnect={handleDisconnect}
+                  onSwitchNetwork={() => setShowNetworkModal(true)}
+                  isWrongNetwork={isWrongNetwork}
+                />
               )}
             </>
           ) : (
-            <Btn onClick={handleOpenWalletModal}
+            <Btn onClick={() => setShowWallet(true)}
               style={{ padding: '10px 20px', borderRadius: 99, background: T.accent, color: '#0A0E14', border: 'none', fontWeight: 800, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' }}>
               Connect Wallet
             </Btn>
@@ -756,6 +764,7 @@ export default function App() {
         </div>
       </header>
 
+      {/* ── Main ── */}
       <main style={{ maxWidth: 1100, margin: '0 auto', padding: '24px 16px' }}>
         {isConnected && !gasBannerDismissed && (
           <GasBanner sttBal={sttBalRaw} onDismiss={() => setGasBannerDismissed(true)} />
@@ -769,9 +778,9 @@ export default function App() {
 
         <div className="stats-grid">
           {[
-            { label: 'Total Locked',  value: `${fmt(totalLocked)} RSTT`, color: T.blue },
+            { label: 'Total Locked',   value: `${fmt(totalLocked)} RSTT`, color: T.blue },
             { label: 'Active Escrows', value: String(escrows.filter(e => e.state < 3).length), color: T.accent },
-            { label: 'Auto-Released', value: String(escrows.filter(e => e.state === 3).length), color: T.green },
+            { label: 'Auto-Released',  value: String(escrows.filter(e => e.state === 3).length), color: T.green },
           ].map(({ label, value, color }) => (
             <div key={label} style={{ background: T.surface, border: '1px solid #1E2D3D', borderRadius: 14, padding: '14px 16px' }}>
               <div style={{ fontSize: 10, color: T.muted, fontFamily: T.mono, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>{label}</div>
@@ -801,7 +810,7 @@ export default function App() {
             <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>No escrows yet</div>
             <div style={{ fontSize: 13, color: T.muted, marginBottom: 20 }}>{isConnected ? 'Create your first trustless escrow' : 'Connect your wallet to get started'}</div>
             {isConnected && !isWrongNetwork && <Btn onClick={() => setShowCreate(true)} style={{ padding: '10px 22px', borderRadius: 99, background: T.accent, color: '#0A0E14', border: 'none', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>Create Escrow</Btn>}
-            {!isConnected && <Btn onClick={handleOpenWalletModal} style={{ padding: '10px 22px', borderRadius: 99, background: T.accent, color: '#0A0E14', border: 'none', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>Connect Wallet</Btn>}
+            {!isConnected && <Btn onClick={() => setShowWallet(true)} style={{ padding: '10px 22px', borderRadius: 99, background: T.accent, color: '#0A0E14', border: 'none', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>Connect Wallet</Btn>}
           </div>
         )}
 
