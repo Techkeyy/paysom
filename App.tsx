@@ -93,13 +93,9 @@ async function hardDisconnect(wagmiDisconnect: () => void) {
 
 // ─── WALLET MODAL ─────────────────────────────────────────────────────────────
 const WALLET_LIST = [
-  { id: 'metamask',      label: 'MetaMask',       desc: 'Browser extension',       icon: '🦊' },
-  { id: 'rabby',         label: 'Rabby',           desc: 'Browser extension',       icon: '🐰' },
-  { id: 'zerion',        label: 'Zerion',          desc: 'Browser extension',       icon: '💎' },
-  { id: 'coinbase',      label: 'Coinbase Wallet', desc: 'Browser extension',       icon: '🔵' },
-  { id: 'trust',         label: 'Trust Wallet',    desc: 'Browser / mobile wallet', icon: '🛡️' },
-  { id: 'brave',         label: 'Brave Wallet',    desc: 'Browser built-in',        icon: '🦁' },
-  { id: 'walletconnect', label: 'WalletConnect',   desc: 'Mobile & all WC wallets', icon: '🔗' },
+  { id: 'metamask',      label: 'MetaMask',     desc: 'Browser extension',       icon: '🦊' },
+  { id: 'zerion',        label: 'Zerion',        desc: 'Browser extension',       icon: '💎' },
+  { id: 'walletconnect', label: 'WalletConnect', desc: 'Mobile & all WC wallets', icon: '🔗' },
 ]
 
 function WalletModal({ onClose }: { onClose: () => void }) {
