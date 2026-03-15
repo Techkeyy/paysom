@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useAccount, useConnect, useDisconnect, useBalance, useWalletClient } from 'wagmi'
+import { useAccount, useConnect, useDisconnect, useBalance, useWalletClient, useChainId } from 'wagmi'
 import { injected, walletConnect } from 'wagmi/connectors'
 import { formatEther, parseUnits, keccak256, toBytes, createPublicClient, http } from 'viem'
 import { MOCK_STT_ADDRESS, REACT_PAY_ADDRESS, MOCK_STT_ABI, REACT_PAY_ABI, getStateName, STATE_COLOR } from '@/lib/contracts'
@@ -20,7 +20,6 @@ const fmt = (v: bigint) => parseFloat(formatEther(v)).toFixed(2)
 const stateColor = (s: number) => STATE_COLOR[getStateName(s)] ?? T.muted
 
 const publicClient = createPublicClient({ chain: somniaTestnet, transport: http('https://dream-rpc.somnia.network') })
-
 const WC_PROJECT_ID = 'b8a1daa2dd22335f4e2a5a2d3c9d9e1f'
 
 interface Escrow {
@@ -32,21 +31,10 @@ interface Escrow {
 function Btn({ onClick, disabled, style, children }: { onClick?: () => void; disabled?: boolean; style?: React.CSSProperties; children: React.ReactNode }) {
   const [pressed, setPressed] = useState(false)
   return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      onMouseDown={() => setPressed(true)}
-      onMouseUp={() => setPressed(false)}
-      onMouseLeave={() => setPressed(false)}
-      style={{
-        ...style,
-        transform: pressed && !disabled ? 'scale(0.95)' : 'scale(1)',
-        boxShadow: pressed && !disabled ? `0 0 16px ${T.accent}50` : 'none',
-        transition: 'transform 0.1s, box-shadow 0.1s, filter 0.15s, opacity 0.15s',
-      }}
-    >
-      {children}
-    </button>
+    <button onClick={onClick} disabled={disabled}
+      onMouseDown={() => setPressed(true)} onMouseUp={() => setPressed(false)} onMouseLeave={() => setPressed(false)}
+      style={{ ...style, transform: pressed && !disabled ? 'scale(0.95)' : 'scale(1)', boxShadow: pressed && !disabled ? `0 0 16px ${T.accent}50` : 'none', transition: 'transform 0.1s, box-shadow 0.1s, filter 0.15s, opacity 0.15s' }}
+    >{children}</button>
   )
 }
 
@@ -62,6 +50,7 @@ function Modal({ children, onClose }: { children: React.ReactNode; onClose: () =
 
 function WalletModal({ onClose }: { onClose: () => void }) {
   const { connect } = useConnect()
+  const { disconnect } = useDisconnect()
   const [connecting, setConnecting] = useState<string | null>(null)
   const [err, setErr] = useState('')
 
@@ -76,11 +65,15 @@ function WalletModal({ onClose }: { onClose: () => void }) {
     setConnecting(wallet.id)
     setErr('')
     try {
+      // always disconnect first to prevent auto-reconnect to old wallet
+      await disconnect()
+      await new Promise(r => setTimeout(r, 300))
       await connect({ connector: wallet.connector })
       await new Promise(r => setTimeout(r, 500))
       onClose()
     } catch (e: any) {
-      if (wallet.id === 'metamask' || wallet.id === 'rabby' || wallet.id === 'zerion') {
+      // fallback: try direct ethereum request
+      if (wallet.id !== 'walletconnect') {
         try {
           const eth = (window as any).ethereum
           if (!eth) throw new Error('No wallet found — open this site inside your wallet\'s browser')
@@ -110,18 +103,8 @@ function WalletModal({ onClose }: { onClose: () => void }) {
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {wallets.map(wallet => (
-          <button
-            key={wallet.id}
-            onClick={() => handleConnect(wallet)}
-            disabled={!!connecting}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 16, padding: '14px 18px',
-              borderRadius: 14, background: connecting === wallet.id ? T.accentDim : T.surface2,
-              border: `1px solid ${connecting === wallet.id ? T.accentMid : T.border}`,
-              cursor: connecting ? 'not-allowed' : 'pointer', color: T.text,
-              textAlign: 'left', opacity: connecting && connecting !== wallet.id ? 0.5 : 1,
-              transition: 'all 0.15s',
-            }}
+          <button key={wallet.id} onClick={() => handleConnect(wallet)} disabled={!!connecting}
+            style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '14px 18px', borderRadius: 14, background: connecting === wallet.id ? T.accentDim : T.surface2, border: `1px solid ${connecting === wallet.id ? T.accentMid : T.border}`, cursor: connecting ? 'not-allowed' : 'pointer', color: T.text, textAlign: 'left', opacity: connecting && connecting !== wallet.id ? 0.5 : 1, transition: 'all 0.15s' }}
           >
             <div style={{ fontSize: 26, width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 12, background: T.surface, border: `1px solid ${T.border}`, flexShrink: 0 }}>
               {connecting === wallet.id ? '⏳' : wallet.icon}
@@ -151,9 +134,7 @@ function GasBanner({ sttBal, onDismiss }: { sttBal: bigint; onDismiss: () => voi
         <span style={{ fontSize: 16 }}>⛽</span>
         <span style={{ fontSize: 12, color: T.yellow, fontFamily: T.mono }}>
           Low STT balance — you need STT for gas.&nbsp;
-          <a href="https://testnet.somnia.network/" target="_blank" rel="noreferrer" style={{ color: T.accent, fontWeight: 700, textDecoration: 'none' }}>
-            Get STT from faucet ↗
-          </a>
+          <a href="https://testnet.somnia.network/" target="_blank" rel="noreferrer" style={{ color: T.accent, fontWeight: 700, textDecoration: 'none' }}>Get STT from faucet ↗</a>
         </span>
       </div>
       <button onClick={onDismiss} style={{ background: 'none', border: 'none', color: T.muted, fontSize: 16, cursor: 'pointer', lineHeight: 1, flexShrink: 0 }}>×</button>
@@ -317,16 +298,11 @@ function EscrowCard({ escrow, myAddress, onDeliver, onRefresh }: { escrow: Escro
   }
 
   return (
-    <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 16, borderLeft: `3px solid ${color}`, overflow: 'hidden', transition: 'box-shadow 0.2s' }}>
-      <button
-        onClick={() => setExpanded(e => !e)}
-        style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: 'transparent', border: 'none', cursor: 'pointer', color: T.text, textAlign: 'left' }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontWeight: 700, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{escrow.title || `Escrow #${escrow.id}`}</div>
-            <div style={{ fontSize: 11, color: T.muted, fontFamily: T.mono, marginTop: 2 }}>{fmt(escrow.amount)} RSTT</div>
-          </div>
+    <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 16, borderLeft: `3px solid ${color}`, overflow: 'hidden' }}>
+      <button onClick={() => setExpanded(e => !e)} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: 'transparent', border: 'none', cursor: 'pointer', color: T.text, textAlign: 'left' }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 700, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{escrow.title || `Escrow #${escrow.id}`}</div>
+          <div style={{ fontSize: 11, color: T.muted, fontFamily: T.mono, marginTop: 2 }}>{fmt(escrow.amount)} RSTT</div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, marginLeft: 10 }}>
           <Badge state={escrow.state} />
@@ -354,10 +330,10 @@ function EscrowCard({ escrow, myAddress, onDeliver, onRefresh }: { escrow: Escro
           {state === 'Released' && <div style={{ padding: '8px 12px', borderRadius: 8, marginBottom: 12, background: T.green + '12', border: `1px solid ${T.green}30`, fontSize: 11, color: T.green, fontFamily: T.mono }}>✅ Payment auto-released by Somnia Reactivity</div>}
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             {state === 'Funded' && isFreelancer && (
-              <Btn onClick={onDeliver} style={{ padding: '7px 16px', borderRadius: 99, cursor: 'pointer', background: T.purple, color: '#fff', border: 'none', fontWeight: 700, fontSize: 12, fontFamily: T.sans }}>📦 Deliver Work</Btn>
+              <Btn onClick={onDeliver} style={{ padding: '7px 16px', borderRadius: 99, cursor: 'pointer', background: T.purple, color: '#fff', border: 'none', fontWeight: 700, fontSize: 12 }}>📦 Deliver Work</Btn>
             )}
             {isClient && state === 'Delivered' && (
-              <Btn onClick={dispute} style={{ padding: '7px 16px', borderRadius: 99, cursor: 'pointer', background: T.red + '15', color: T.red, border: `1px solid ${T.red}40`, fontWeight: 700, fontSize: 12, fontFamily: T.sans }}>⚠️ Dispute</Btn>
+              <Btn onClick={dispute} style={{ padding: '7px 16px', borderRadius: 99, cursor: 'pointer', background: T.red + '15', color: T.red, border: `1px solid ${T.red}40`, fontWeight: 700, fontSize: 12 }}>⚠️ Dispute</Btn>
             )}
             <Btn onClick={onRefresh} style={{ padding: '5px 12px', borderRadius: 99, cursor: 'pointer', background: 'transparent', color: T.muted, border: `1px solid ${T.border}`, fontSize: 11, fontFamily: T.mono }}>↻ Refresh</Btn>
             <a href={`https://shannon-explorer.somnia.network/address/${REACT_PAY_ADDRESS}`} target="_blank" rel="noreferrer" style={{ fontSize: 10, color: T.muted, textDecoration: 'none', fontFamily: T.mono, marginLeft: 'auto' }}>Explorer ↗</a>
@@ -371,6 +347,7 @@ function EscrowCard({ escrow, myAddress, onDeliver, onRefresh }: { escrow: Escro
 export default function App() {
   const { address, isConnected } = useAccount()
   const { disconnect } = useDisconnect()
+  const chainId = useChainId()
   const { data: sttBal } = useBalance({ address, query: { enabled: isConnected } })
   const { data: wc } = useWalletClient()
 
@@ -380,8 +357,11 @@ export default function App() {
   const [tab, setTab] = useState<'all' | 'mine'>('all')
   const [showCreate, setShowCreate] = useState(false)
   const [showWallet, setShowWallet] = useState(false)
+  const [showAccountMenu, setShowAccountMenu] = useState(false)
   const [deliverEscrow, setDeliverEscrow] = useState<Escrow | null>(null)
   const [gasBannerDismissed, setGasBannerDismissed] = useState(false)
+
+  const isWrongNetwork = isConnected && chainId !== somniaTestnet.id
 
   const fetchAll = useCallback(async (showLoader = false) => {
     if (showLoader) setLoading(true)
@@ -409,26 +389,24 @@ export default function App() {
 
   useEffect(() => { setGasBannerDismissed(false) }, [address])
 
-  useEffect(() => {
-    if (!isConnected) return
-    async function checkNetwork() {
-      const eth = (window as any).ethereum
-      if (!eth) return
-      const chainId = await eth.request({ method: 'eth_chainId' })
-      if (chainId !== '0xC488') {
-        try {
-          await eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0xC488' }] })
-        } catch (e: any) {
-          if (e.code === 4902) {
-            await eth.request({
-              method: 'wallet_addEthereumChain',
-              params: [{ chainId: '0xC488', chainName: 'Somnia Testnet', nativeCurrency: { name: 'Somnia Test Token', symbol: 'STT', decimals: 18 }, rpcUrls: ['https://dream-rpc.somnia.network'], blockExplorerUrls: ['https://shannon-explorer.somnia.network'] }]
-            })
-          }
-        }
+  async function switchNetwork() {
+    const eth = (window as any).ethereum
+    if (!eth) return
+    try {
+      await eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0xC488' }] })
+    } catch (e: any) {
+      if (e.code === 4902) {
+        await eth.request({
+          method: 'wallet_addEthereumChain',
+          params: [{ chainId: '0xC488', chainName: 'Somnia Testnet', nativeCurrency: { name: 'Somnia Test Token', symbol: 'STT', decimals: 18 }, rpcUrls: ['https://dream-rpc.somnia.network'], blockExplorerUrls: ['https://shannon-explorer.somnia.network'] }]
+        })
       }
     }
-    checkNetwork()
+  }
+
+  useEffect(() => {
+    if (!isConnected) return
+    switchNetwork()
   }, [isConnected])
 
   async function getFaucet() {
@@ -450,6 +428,12 @@ export default function App() {
     } catch (e: any) { alert(e?.shortMessage ?? e?.message ?? 'Faucet failed') }
   }
 
+  async function handleDisconnect() {
+    setShowAccountMenu(false)
+    await disconnect()
+    setRsttBal(0n)
+  }
+
   const visible = tab === 'mine'
     ? escrows.filter(e => address && (e.client.toLowerCase() === address.toLowerCase() || e.freelancer.toLowerCase() === address.toLowerCase()))
     : escrows
@@ -469,6 +453,7 @@ export default function App() {
         .header-connected { display: flex; gap: 8px; align-items: center; }
         .bal-rstt { padding: 6px 10px; border-radius: 8px; background: #141C28; border: 1px solid #1E2D3D; font-size: 11px; font-family: 'JetBrains Mono', monospace; color: #4A6680; white-space: nowrap; }
         .bal-stt { padding: 6px 10px; border-radius: 8px; background: #141C28; border: 1px solid #1E2D3D; font-size: 11px; font-family: 'JetBrains Mono', monospace; color: #4A6680; white-space: nowrap; }
+        .account-menu { position: absolute; top: 54px; right: 16px; background: #0F1520; border: 1px solid #1E2D3D; border-radius: 14px; padding: 8px; min-width: 200px; z-index: 100; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
         @media (max-width: 600px) {
           .modal-overlay { align-items: flex-end !important; }
           .modal-inner { border-radius: 20px 20px 0 0 !important; }
@@ -476,12 +461,15 @@ export default function App() {
           .stats-grid > div:last-child { grid-column: span 2; }
           .hero-title { font-size: 26px !important; }
           .bal-stt { display: none !important; }
+          .bal-rstt { display: none !important; }
+          .account-menu { right: 8px; }
         }
       `}</style>
 
       {showWallet && <WalletModal onClose={() => setShowWallet(false)} />}
       {showCreate && <CreateModal onClose={() => setShowCreate(false)} onDone={() => { fetchAll(); fetchRSTT() }} />}
       {deliverEscrow && <DeliverModal escrow={deliverEscrow} onClose={() => setDeliverEscrow(null)} onDone={() => { fetchAll(); fetchRSTT() }} />}
+      {showAccountMenu && <div onClick={() => setShowAccountMenu(false)} style={{ position: 'fixed', inset: 0, zIndex: 99 }} />}
 
       <header style={{ position: 'sticky', top: 0, zIndex: 50, height: 62, borderBottom: '1px solid #1E2D3D', background: '#0F1520EE', backdropFilter: 'blur(20px)', padding: '0 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -491,12 +479,24 @@ export default function App() {
             <div style={{ fontSize: 9, color: T.muted, letterSpacing: '0.1em', textTransform: 'uppercase', fontFamily: T.mono }}>Somnia Reactivity</div>
           </div>
         </div>
-        <div className="header-connected">
+        <div className="header-connected" style={{ position: 'relative' }}>
           {isConnected && <>
-            <Btn onClick={getFaucet} style={{ padding: '7px 12px', borderRadius: 99, background: T.accentDim, color: T.accent, border: `1px solid ${T.accentMid}`, fontWeight: 700, fontSize: 11, cursor: 'pointer', fontFamily: T.mono, whiteSpace: 'nowrap' }}>🚰 Get RSTT</Btn>
-            <div className="bal-rstt"><span style={{ color: T.accent, fontWeight: 700 }}>{parseFloat(formatEther(rsttBal)).toFixed(1)}</span>&nbsp;RSTT</div>
-            <div className="bal-stt">{sttBal ? parseFloat(formatEther(sttBal.value)).toFixed(3) : '—'}&nbsp;STT</div>
-            <Btn onClick={() => disconnect()} style={{ padding: '7px 12px', borderRadius: 99, background: T.surface2, color: T.accent, border: '1px solid #4FFFB035', fontWeight: 700, fontSize: 11, cursor: 'pointer', fontFamily: T.mono, whiteSpace: 'nowrap' }}>✓ {short(address ?? '')}</Btn>
+            {isWrongNetwork
+              ? <Btn onClick={switchNetwork} style={{ padding: '7px 12px', borderRadius: 99, background: T.red + '15', color: T.red, border: `1px solid ${T.red}40`, fontWeight: 700, fontSize: 11, cursor: 'pointer', fontFamily: T.mono, whiteSpace: 'nowrap' }}>⚠️ Switch Network</Btn>
+              : <>
+                <Btn onClick={getFaucet} style={{ padding: '7px 12px', borderRadius: 99, background: T.accentDim, color: T.accent, border: `1px solid ${T.accentMid}`, fontWeight: 700, fontSize: 11, cursor: 'pointer', fontFamily: T.mono, whiteSpace: 'nowrap' }}>🚰 Get RSTT</Btn>
+                <div className="bal-rstt"><span style={{ color: T.accent, fontWeight: 700 }}>{parseFloat(formatEther(rsttBal)).toFixed(1)}</span>&nbsp;RSTT</div>
+                <div className="bal-stt">{sttBal ? parseFloat(formatEther(sttBal.value)).toFixed(3) : '—'}&nbsp;STT</div>
+              </>
+            }
+            <Btn onClick={() => setShowAccountMenu(v => !v)} style={{ padding: '7px 12px', borderRadius: 99, background: T.surface2, color: T.accent, border: '1px solid #4FFFB035', fontWeight: 700, fontSize: 11, cursor: 'pointer', fontFamily: T.mono, whiteSpace: 'nowrap' }}>✓ {short(address ?? '')} ▾</Btn>
+            {showAccountMenu && (
+              <div className="account-menu" style={{ zIndex: 100 }}>
+                <div style={{ padding: '8px 12px', fontSize: 10, color: T.muted, fontFamily: T.mono, borderBottom: `1px solid ${T.border}`, marginBottom: 6 }}>{address}</div>
+                <button onClick={() => { setShowAccountMenu(false); setShowWallet(true); disconnect() }} style={{ width: '100%', padding: '9px 12px', borderRadius: 8, background: 'transparent', border: 'none', color: T.text, fontSize: 12, fontWeight: 600, cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8 }}>🔄 Switch Wallet</button>
+                <button onClick={handleDisconnect} style={{ width: '100%', padding: '9px 12px', borderRadius: 8, background: 'transparent', border: 'none', color: T.red, fontSize: 12, fontWeight: 600, cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8 }}>⏏ Disconnect</button>
+              </div>
+            )}
           </>}
           {!isConnected && <Btn onClick={() => setShowWallet(true)} style={{ padding: '10px 20px', borderRadius: 99, background: T.accent, color: '#0A0E14', border: 'none', fontWeight: 800, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' }}>Connect Wallet</Btn>}
         </div>
@@ -534,7 +534,7 @@ export default function App() {
               </Btn>
             ))}
           </div>
-          {isConnected && <Btn onClick={() => setShowCreate(true)} style={{ padding: '10px 18px', borderRadius: 99, background: T.accent, color: '#0A0E14', border: 'none', fontWeight: 800, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' }}>⚡ New Escrow</Btn>}
+          {isConnected && !isWrongNetwork && <Btn onClick={() => setShowCreate(true)} style={{ padding: '10px 18px', borderRadius: 99, background: T.accent, color: '#0A0E14', border: 'none', fontWeight: 800, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' }}>⚡ New Escrow</Btn>}
         </div>
 
         {loading && <div style={{ textAlign: 'center', padding: 40, color: T.muted, fontFamily: T.mono }}>Loading...</div>}
@@ -544,7 +544,7 @@ export default function App() {
             <div style={{ fontSize: 40, marginBottom: 12 }}>⚡</div>
             <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>No escrows yet</div>
             <div style={{ fontSize: 13, color: T.muted, marginBottom: 20 }}>{isConnected ? 'Create your first trustless escrow' : 'Connect your wallet to get started'}</div>
-            {isConnected && <Btn onClick={() => setShowCreate(true)} style={{ padding: '10px 22px', borderRadius: 99, background: T.accent, color: '#0A0E14', border: 'none', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>Create Escrow</Btn>}
+            {isConnected && !isWrongNetwork && <Btn onClick={() => setShowCreate(true)} style={{ padding: '10px 22px', borderRadius: 99, background: T.accent, color: '#0A0E14', border: 'none', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>Create Escrow</Btn>}
             {!isConnected && <Btn onClick={() => setShowWallet(true)} style={{ padding: '10px 22px', borderRadius: 99, background: T.accent, color: '#0A0E14', border: 'none', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>Connect Wallet</Btn>}
           </div>
         )}
