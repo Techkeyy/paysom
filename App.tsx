@@ -61,11 +61,17 @@ function Modal({ children, onClose }: { children: React.ReactNode; onClose: () =
   )
 }
 
-// Gas estimation — wallets like Rabby reject txs with gas:0x0
-async function estimateGas(eth: any, tx: { from: string; to: string; data: string }): Promise<string> {
+// Gas estimation — Somnia's RPC doesn't support simulation via the wallet
+// provider, so we estimate through publicClient (our own RPC connection).
+// Falls back to 300k if that also fails.
+async function estimateGas(_eth: any, tx: { from: string; to: string; data: string }): Promise<string> {
   try {
-    const raw: string = await eth.request({ method: 'eth_estimateGas', params: [tx] })
-    const buffered = Math.ceil(parseInt(raw, 16) * 1.3)
+    const estimated = await publicClient.estimateGas({
+      account: tx.from as `0x${string}`,
+      to: tx.to as `0x${string}`,
+      data: tx.data as `0x${string}`,
+    })
+    const buffered = (estimated * BigInt(130)) / BigInt(100) // +30% buffer
     return '0x' + buffered.toString(16)
   } catch {
     return '0x493E0' // 300_000 safe fallback
@@ -100,11 +106,7 @@ async function hardDisconnect(wagmiDisconnect: () => void) {
 // Using generic injected() for all of them so the wallet picker
 // itself decides which extension to use (avoids the MetaMask target bug).
 const WALLET_LIST = [
-  { id: 'metamask',  label: 'MetaMask',       desc: 'Browser extension',       icon: '🦊' },
-  { id: 'rabby',     label: 'Rabby',           desc: 'Browser extension',       icon: '🐰' },
-  { id: 'coinbase',  label: 'Coinbase Wallet', desc: 'Browser extension',       icon: '🔵' },
-  { id: 'trust',     label: 'Trust Wallet',    desc: 'Browser / mobile wallet', icon: '🛡️' },
-  { id: 'brave',     label: 'Brave Wallet',    desc: 'Browser built-in',        icon: '🦁' },
+  { id: 'metamask',      label: 'MetaMask',     desc: 'Browser extension',       icon: '🦊' },
   { id: 'walletconnect', label: 'WalletConnect', desc: 'Mobile & all WC wallets', icon: '🔗' },
 ]
 
