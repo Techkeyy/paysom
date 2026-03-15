@@ -1,33 +1,65 @@
-# ⚡ ReactPay
+# ⚡ ReactPay — Trustless Freelance Escrow on Somnia
 
-> Trustless freelance escrow powered by Somnia Reactivity. Payments that execute themselves.
+> Freelancers lose 20% to platforms like Upwork. ReactPay fixes this with trustless escrow on Somnia — smart contracts that auto-release payment the moment work is delivered. No middlemen. No fees. No disputes.
 
-## What is ReactPay?
+## 🔗 Links
+- **Live Demo:** https://reactpay-app.vercel.app
+- **Video Demo:** https://www.loom.com/share/dc79bcbd39cd4a2c874e1341bf84e04d
 
-ReactPay is a decentralized escrow protocol for freelance payments built on Somnia. A client locks funds on-chain, a freelancer delivers work, and payment releases **automatically**no , middlemen, no fees, no delays.
-
-This is powered by **Somnia Reactivity**. The contract inherits `SomniaEventHandler` and uses `_onEvent` to react to on-chain events in real time:
-
-- Transfer detected → escrow auto-funded ⚡
-- Work delivered → payment auto-released ⚡
-
-## Deployed Contracts (Somnia Testnet)
-
+## 📜 Contract Addresses (Somnia Testnet)
 | Contract | Address |
 |----------|---------|
 | MockSTT (RSTT) | `0xeC1CF1647FB1406D33eC577A279523C425D71D9c` |
 | ReactPay | `0xDE76d8b12Fe677BFaA9a5fA40Ec57B530fBaB202` |
 
-## Tech Stack
+## 🚀 How It Works
+1. **Client** creates an escrow — locks RSTT tokens for a specific freelancer
+2. **Somnia Reactivity** watches for the token transfer event on-chain
+3. **Freelancer** delivers work — submits a delivery hash (GitHub link, IPFS CID, etc.)
+4. **Somnia Reactivity** detects the WorkDelivered event and automatically releases payment
+5. **No human intervention required** — the contract executes itself
 
-- Solidity + SomniaEventHandler
-- Next.js, wagmi, viem
-- Somnia Testnet (Chain ID: 50312)
+## ⚡ Somnia Reactivity Integration
+ReactPay inherits `SomniaEventHandler` and uses `_onEvent` to:
+- Listen for ERC-20 `Transfer` events → marks escrow as Funded
+- Listen for `WorkDelivered` events → auto-releases payment to freelancer
 
-## Demo Flow
+Both subscriptions are registered on-chain via the `subscribe.ts` script.
 
-1. Connect wallet → Get RSTT from faucet
-2. Create escrow with freelancer address + amount
-3. Reactivity detects Transfer → **auto-funded** ⚡
-4. Freelancer submits delivery reference
-5. Reactivity detects WorkDelivered → **auto-released** ⚡
+## 🛠 Tech Stack
+- **Blockchain:** Somnia Testnet (Chain ID: 50312)
+- **Smart Contracts:** Solidity + Hardhat
+- **Frontend:** Next.js 14, wagmi v2, viem, TypeScript
+- **Wallets:** MetaMask, Rabby, Zerion, WalletConnect
+
+## 📁 Project Structure
+```
+reactpay/
+├── contracts/
+│   ├── SomniaEventHandler.sol
+│   ├── MockSTT.sol
+│   └── ReactPay.sol
+├── scripts/
+│   └── subscribe.ts
+└── frontend/
+    └── src/
+        ├── app/
+        ├── components/
+        │   └── App.tsx
+        └── lib/
+            ├── chain.ts
+            └── contracts.ts
+```
+
+## 🧪 Try It Yourself
+1. Visit https://reactpay-app.vercel.app
+2. Connect your wallet (MetaMask, Rabby, or Zerion)
+3. Switch to Somnia Testnet (auto-prompted)
+4. Get test STT from https://testnet.somnia.network
+5. Click **Get RSTT** to get test tokens
+6. Create an escrow with a freelancer wallet
+7. Switch to freelancer wallet and click **Deliver Work**
+8. Watch Reactivity auto-release the payment ⚡
+
+## 🏆 Somnia Reactivity Hackathon 2026
+Built for the Somnia Reactivity Hackathon — demonstrating how reactive smart contracts can automate real-world financial workflows.
