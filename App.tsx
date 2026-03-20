@@ -430,6 +430,26 @@ export default function App() {
     setShowAccountMenu(false)
     await disconnect()
     setRsttBal(0n)
+    // clear wagmi storage so it doesn't auto-reconnect
+    try {
+      localStorage.removeItem('wagmi.store')
+      localStorage.removeItem('wagmi.connected')
+      localStorage.removeItem('wagmi.wallet')
+      localStorage.removeItem('wagmi.injected.connected')
+    } catch {}
+    setTimeout(() => setShowWallet(true), 300)
+  }
+
+  async function handleSwitchWallet() {
+    setShowAccountMenu(false)
+    await disconnect()
+    try {
+      localStorage.removeItem('wagmi.store')
+      localStorage.removeItem('wagmi.connected')
+      localStorage.removeItem('wagmi.wallet')
+      localStorage.removeItem('wagmi.injected.connected')
+    } catch {}
+    setTimeout(() => setShowWallet(true), 300)
   }
 
   const visible = tab === 'mine'
@@ -491,7 +511,7 @@ export default function App() {
             {showAccountMenu && (
               <div className="account-menu">
                 <div style={{ padding: '8px 12px', fontSize: 10, color: T.muted, fontFamily: T.mono, borderBottom: `1px solid ${T.border}`, marginBottom: 6 }}>{address}</div>
-                <button onClick={() => { setShowAccountMenu(false); disconnect(); setTimeout(() => setShowWallet(true), 300) }} style={{ width: '100%', padding: '9px 12px', borderRadius: 8, background: 'transparent', border: 'none', color: T.text, fontSize: 12, fontWeight: 600, cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8 }}>🔄 Switch Wallet</button>
+                <button onClick={handleSwitchWallet} style={{ width: '100%', padding: '9px 12px', borderRadius: 8, background: 'transparent', border: 'none', color: T.text, fontSize: 12, fontWeight: 600, cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8 }}>🔄 Switch Wallet</button>
                 <button onClick={handleDisconnect} style={{ width: '100%', padding: '9px 12px', borderRadius: 8, background: 'transparent', border: 'none', color: T.red, fontSize: 12, fontWeight: 600, cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8 }}>⏏ Disconnect</button>
               </div>
             )}
