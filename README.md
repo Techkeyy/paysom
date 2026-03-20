@@ -3,8 +3,8 @@
 > Freelancers lose 20% to platforms like Upwork. PaySom fixes this with trustless escrow on Somnia — smart contracts that auto-release payment the moment work is delivered. No middlemen. No fees. No disputes.
 
 ## 🔗 Links
-- **Live Demo:** https://reactpay-app.vercel.app
-- **Video Demo:** https://www.loom.com/share/dc79bcbd39cd4a2c874e1341bf84e04d
+[- **Live Demo:** https://reactpay-app.vercel.app](https://paysom.vercel.app/)
+- **Video Demo:** 
 
 ## 📜 Contract Addresses (Somnia Testnet)
 | Contract | Address |
