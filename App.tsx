@@ -451,7 +451,7 @@ export default function App() {
         .header-connected { display: flex; gap: 8px; align-items: center; }
         .bal-rstt { padding: 6px 10px; border-radius: 8px; background: #141C28; border: 1px solid #1E2D3D; font-size: 11px; font-family: 'JetBrains Mono', monospace; color: #4A6680; white-space: nowrap; }
         .bal-stt { padding: 6px 10px; border-radius: 8px; background: #141C28; border: 1px solid #1E2D3D; font-size: 11px; font-family: 'JetBrains Mono', monospace; color: #4A6680; white-space: nowrap; }
-        .account-menu { position: absolute; top: 54px; right: 0; background: #0F1520; border: 1px solid #1E2D3D; border-radius: 14px; padding: 8px; min-width: 200px; z-index: 100; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
+        .account-menu { position: absolute; top: 54px; right: 0; background: #0F1520; border: 1px solid #1E2D3D; border-radius: 14px; padding: 8px; min-width: 200px; z-index: 200; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
         @media (max-width: 600px) {
           .modal-overlay { align-items: flex-end !important; }
           .modal-inner { border-radius: 20px 20px 0 0 !important; }
@@ -467,7 +467,7 @@ export default function App() {
       {showWallet && <WalletModal onClose={() => setShowWallet(false)} />}
       {showCreate && <CreateModal onClose={() => setShowCreate(false)} onDone={() => { fetchAll(); fetchRSTT() }} />}
       {deliverEscrow && <DeliverModal escrow={deliverEscrow} onClose={() => setDeliverEscrow(null)} onDone={() => { fetchAll(); fetchRSTT() }} />}
-      {showAccountMenu && <div onClick={() => setShowAccountMenu(false)} style={{ position: 'fixed', inset: 0, zIndex: 99 }} />}
+      {showAccountMenu && <div onClick={() => setShowAccountMenu(false)} style={{ position: 'fixed', inset: 0, zIndex: 98 }} />}
 
       <header style={{ position: 'sticky', top: 0, zIndex: 50, height: 62, borderBottom: '1px solid #1E2D3D', background: '#0F1520EE', backdropFilter: 'blur(20px)', padding: '0 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
