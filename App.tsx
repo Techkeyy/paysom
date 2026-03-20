@@ -50,7 +50,6 @@ function Modal({ children, onClose }: { children: React.ReactNode; onClose: () =
 
 function WalletModal({ onClose }: { onClose: () => void }) {
   const { connect } = useConnect()
-  const { disconnect } = useDisconnect()
   const [connecting, setConnecting] = useState<string | null>(null)
   const [err, setErr] = useState('')
 
@@ -65,10 +64,7 @@ function WalletModal({ onClose }: { onClose: () => void }) {
     setConnecting(wallet.id)
     setErr('')
     try {
-      await disconnect()
-      await new Promise(r => setTimeout(r, 300))
       await connect({ connector: wallet.connector })
-      await new Promise(r => setTimeout(r, 500))
       onClose()
     } catch (e: any) {
       if (wallet.id !== 'walletconnect') {
@@ -76,7 +72,6 @@ function WalletModal({ onClose }: { onClose: () => void }) {
           const eth = (window as any).ethereum
           if (!eth) throw new Error('No wallet found — open this site inside your wallet\'s browser')
           await eth.request({ method: 'eth_requestAccounts' })
-          await new Promise(r => setTimeout(r, 500))
           onClose()
           return
         } catch (e2: any) {
@@ -430,24 +425,12 @@ export default function App() {
     setShowAccountMenu(false)
     await disconnect()
     setRsttBal(0n)
-    try {
-      localStorage.removeItem('wagmi.store')
-      localStorage.removeItem('wagmi.connected')
-      localStorage.removeItem('wagmi.wallet')
-      localStorage.removeItem('wagmi.injected.connected')
-    } catch {}
-    // just disconnect — user clicks Connect Wallet to reconnect
   }
 
   async function handleSwitchWallet() {
     setShowAccountMenu(false)
     await disconnect()
-    try {
-      localStorage.removeItem('wagmi.store')
-      localStorage.removeItem('wagmi.connected')
-      localStorage.removeItem('wagmi.wallet')
-      localStorage.removeItem('wagmi.injected.connected')
-    } catch {}
+    setRsttBal(0n)
     setTimeout(() => setShowWallet(true), 300)
   }
 
