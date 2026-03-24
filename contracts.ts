@@ -1,7 +1,7 @@
 // ── Contract addresses ────────────────────────────────────────────────────────
 // Fill these in after deploying via Remix
-export const MOCK_STT_ADDRESS  = (process.env.0xAB4825Ed0b4739772c8f09A3EDBd548d800a30E6 ?? '') as `0x${string}`
-export const REACT_PAY_ADDRESS = (process.env.0xefC0700d055AeD1b9C83767B54eb8708308240aE ?? '') as `0x${string}`
+export const MOCK_STT_ADDRESS  = (process.env.MOCK_STT_ADDRESS ?? '') as `0x${string}`
+export const REACT_PAY_ADDRESS = (process.env.REACT_PAY_ADDRESS ?? '') as `0x${string}`
 
 // ── MockSTT ABI (minimal) ─────────────────────────────────────────────────────
 export const MOCK_STT_ABI = [
