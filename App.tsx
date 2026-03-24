@@ -156,31 +156,55 @@ function CreateModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
   const valid = title.length > 0 && freelancer.startsWith('0x') && freelancer.length === 42 && parseFloat(amount) > 0
 
   async function create() {
+
     if (!valid) return
+
     setBusy(true); setErr('')
+
     try {
+
       const amt = parseUnits(amount, 18)
+
       const eth = (window as any).ethereum
+
       if (!eth) throw new Error('No wallet found')
+
       const { encodeFunctionData } = await import('viem')
+
       const accounts: string[] = await eth.request({ method: 'eth_requestAccounts' })
 
+      // Step 1: Create the escrow on-chain
+
       setStatus('Step 1/3: Creating escrow...')
+
       const createData = encodeFunctionData({ abi: REACT_PAY_ABI, functionName: 'createEscrow', args: [freelancer as `0x${string}`, amt, title, BigInt(300)] })
+
       const tx1 = await eth.request({ method: 'eth_sendTransaction', params: [{ from: accounts[0], to: REACT_PAY_ADDRESS, data: createData }] })
+
       await publicClient.waitForTransactionReceipt({ hash: tx1 as `0x${string}`, timeout: 120_000 })
 
+      // Step 2: Send tokens directly to the contract
+
       setStatus('Step 2/3: Sending RSTT to contract...')
+
       const transferData = encodeFunctionData({ abi: MOCK_STT_ABI, functionName: 'transfer', args: [REACT_PAY_ADDRESS, amt] })
+
       const tx2 = await eth.request({ method: 'eth_sendTransaction', params: [{ from: accounts[0], to: MOCK_STT_ADDRESS, data: transferData }] })
+
       await publicClient.waitForTransactionReceipt({ hash: tx2 as `0x${string}`, timeout: 120_000 })
 
+      // Step 3: Reactivity picks it up automatically
+
       setStatus('Step 3/3: Waiting for Reactivity to confirm funding... ⚡')
+
       await new Promise(resolve => setTimeout(resolve, 3000))
 
       setStatus('Done! Reactivity is now watching for delivery...')
+
       setTimeout(() => { onDone(); onClose() }, 1500)
+
     } catch (e: any) { setErr(e?.shortMessage ?? e?.message ?? String(e)); setBusy(false) }
+
   }
 
   return (
