@@ -1,23 +1,18 @@
-// ── Contract addresses ────────────────────────────────────────────────────────
-// Fill these in after deploying via Remix
-export const MOCK_STT_ADDRESS  = (process.env.MOCK_STT_ADDRESS ?? '') as `0x${string}`
-export const REACT_PAY_ADDRESS = (process.env.REACT_PAY_ADDRESS ?? '') as `0x${string}`
+export const MOCK_STT_ADDRESS  = (process.env.NEXT_PUBLIC_MOCK_STT_ADDRESS  ?? '0xAB4825Ed0b4739772c8f09A3EDBd548d800a30E6') as `0x${string}`
+export const REACT_PAY_ADDRESS = (process.env.NEXT_PUBLIC_REACT_PAY_ADDRESS ?? '0xefC0700d055AeD1b9C83767B54eb8708308240aE') as `0x${string}`
 
-// ── MockSTT ABI (minimal) ─────────────────────────────────────────────────────
 export const MOCK_STT_ABI = [
-  { name: 'balanceOf',    type: 'function', stateMutability: 'view',        inputs: [{ name: 'account', type: 'address' }], outputs: [{ type: 'uint256' }] },
-  { name: 'allowance',    type: 'function', stateMutability: 'view',        inputs: [{ name: 'owner', type: 'address' }, { name: 'spender', type: 'address' }], outputs: [{ type: 'uint256' }] },
-  { name: 'approve',      type: 'function', stateMutability: 'nonpayable',  inputs: [{ name: 'spender', type: 'address' }, { name: 'amount', type: 'uint256' }], outputs: [{ type: 'bool' }] },
-  { name: 'transfer', type: 'function', stateMutability: 'nonpayable', inputs: [{ name: 'to', type: 'address' }, { name: 'amount', type: 'uint256' }], outputs: [{ type: 'bool' }] },
-  { name: 'faucet',       type: 'function', stateMutability: 'nonpayable',  inputs: [{ name: 'amount', type: 'uint256' }], outputs: [] },
-  { name: 'decimals',     type: 'function', stateMutability: 'view',        inputs: [], outputs: [{ type: 'uint8' }] },
-  { name: 'symbol',       type: 'function', stateMutability: 'view',        inputs: [], outputs: [{ type: 'string' }] },
-  { name: 'Transfer',     type: 'event', inputs: [{ name: 'from', type: 'address', indexed: true }, { name: 'to', type: 'address', indexed: true }, { name: 'value', type: 'uint256', indexed: false }] },
+  { name: 'balanceOf',  type: 'function', stateMutability: 'view',       inputs: [{ name: 'account', type: 'address' }], outputs: [{ type: 'uint256' }] },
+  { name: 'allowance',  type: 'function', stateMutability: 'view',       inputs: [{ name: 'owner', type: 'address' }, { name: 'spender', type: 'address' }], outputs: [{ type: 'uint256' }] },
+  { name: 'approve',    type: 'function', stateMutability: 'nonpayable', inputs: [{ name: 'spender', type: 'address' }, { name: 'amount', type: 'uint256' }], outputs: [{ type: 'bool' }] },
+  { name: 'transfer',   type: 'function', stateMutability: 'nonpayable', inputs: [{ name: 'to', type: 'address' }, { name: 'amount', type: 'uint256' }], outputs: [{ type: 'bool' }] },
+  { name: 'faucet',     type: 'function', stateMutability: 'nonpayable', inputs: [{ name: 'amount', type: 'uint256' }], outputs: [] },
+  { name: 'decimals',   type: 'function', stateMutability: 'view',       inputs: [], outputs: [{ type: 'uint8' }] },
+  { name: 'symbol',     type: 'function', stateMutability: 'view',       inputs: [], outputs: [{ type: 'string' }] },
+  { name: 'Transfer',   type: 'event',    inputs: [{ name: 'from', type: 'address', indexed: true }, { name: 'to', type: 'address', indexed: true }, { name: 'value', type: 'uint256', indexed: false }] },
 ] as const
 
-// ── ReactPay ABI (full) ───────────────────────────────────────────────────────
 export const REACT_PAY_ABI = [
-  // Write
   {
     name: 'createEscrow',
     type: 'function',
@@ -47,7 +42,23 @@ export const REACT_PAY_ABI = [
     inputs: [{ name: 'escrowId', type: 'uint256' }],
     outputs: [],
   },
-  // Read
+  {
+    name: 'claimStaleDispute',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'escrowId', type: 'uint256' }],
+    outputs: [],
+  },
+  {
+    name: 'resolveDispute',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'escrowId',         type: 'uint256' },
+      { name: 'favourFreelancer', type: 'bool'    },
+    ],
+    outputs: [],
+  },
   {
     name: 'getEscrow',
     type: 'function',
@@ -93,6 +104,20 @@ export const REACT_PAY_ABI = [
     }],
   },
   {
+    name: 'getReputation',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'addr', type: 'address' }],
+    outputs: [{
+      type: 'tuple',
+      components: [
+        { name: 'jobsCompleted',  type: 'uint256' },
+        { name: 'totalEarned',    type: 'uint256' },
+        { name: 'disputesRaised', type: 'uint256' },
+      ],
+    }],
+  },
+  {
     name: 'getClientEscrows',
     type: 'function',
     stateMutability: 'view',
@@ -108,14 +133,14 @@ export const REACT_PAY_ABI = [
   },
   { name: 'escrowCount', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
   { name: 'token',       type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
-  // Events
+  { name: 'arbitrator',  type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
   {
     name: 'EscrowCreated',
     type: 'event',
     inputs: [
-      { name: 'id',         type: 'uint256', indexed: true },
-      { name: 'client',     type: 'address', indexed: true },
-      { name: 'freelancer', type: 'address', indexed: true },
+      { name: 'id',         type: 'uint256', indexed: true  },
+      { name: 'client',     type: 'address', indexed: true  },
+      { name: 'freelancer', type: 'address', indexed: true  },
       { name: 'amount',     type: 'uint256', indexed: false },
       { name: 'title',      type: 'string',  indexed: false },
     ],
@@ -124,7 +149,7 @@ export const REACT_PAY_ABI = [
     name: 'PaymentConfirmed',
     type: 'event',
     inputs: [
-      { name: 'id',          type: 'uint256', indexed: true },
+      { name: 'id',          type: 'uint256', indexed: true  },
       { name: 'blockNumber', type: 'uint256', indexed: false },
     ],
   },
@@ -132,8 +157,8 @@ export const REACT_PAY_ABI = [
     name: 'WorkDelivered',
     type: 'event',
     inputs: [
-      { name: 'id',           type: 'uint256', indexed: true },
-      { name: 'freelancer',   type: 'address', indexed: true },
+      { name: 'id',           type: 'uint256', indexed: true  },
+      { name: 'freelancer',   type: 'address', indexed: true  },
       { name: 'deliveryHash', type: 'bytes32', indexed: false },
     ],
   },
@@ -141,8 +166,8 @@ export const REACT_PAY_ABI = [
     name: 'PaymentReleased',
     type: 'event',
     inputs: [
-      { name: 'id',         type: 'uint256', indexed: true },
-      { name: 'freelancer', type: 'address', indexed: true },
+      { name: 'id',         type: 'uint256', indexed: true  },
+      { name: 'freelancer', type: 'address', indexed: true  },
       { name: 'amount',     type: 'uint256', indexed: false },
     ],
   },
@@ -154,9 +179,17 @@ export const REACT_PAY_ABI = [
       { name: 'client', type: 'address', indexed: true },
     ],
   },
+  {
+    name: 'ReputationUpdated',
+    type: 'event',
+    inputs: [
+      { name: 'freelancer',    type: 'address', indexed: true  },
+      { name: 'jobsCompleted', type: 'uint256', indexed: false },
+      { name: 'totalEarned',   type: 'uint256', indexed: false },
+    ],
+  },
 ] as const
 
-// ── Escrow state enum ─────────────────────────────────────────────────────────
 export const ESCROW_STATES = ['Pending', 'Funded', 'Delivered', 'Released', 'Disputed', 'Refunded'] as const
 export type EscrowState = typeof ESCROW_STATES[number]
 
@@ -164,7 +197,6 @@ export function getStateName(state: number): EscrowState {
   return ESCROW_STATES[state] ?? 'Unknown'
 }
 
-// ── State colors ──────────────────────────────────────────────────────────────
 export const STATE_COLOR: Record<string, string> = {
   Pending:   '#F59E0B',
   Funded:    '#3B82F6',
