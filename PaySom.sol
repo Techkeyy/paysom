@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import "./SomniaEventHandler.sol";
 
 /**
- * @title ReactPay
+ * @title PaySom
  * @notice Trustless freelance escrow powered by Somnia Reactivity.
  *
  * THE PROBLEM:
@@ -12,7 +12,7 @@ import "./SomniaEventHandler.sol";
  *   Platforms like Upwork charge 20% and still fail to protect both sides.
  *
  * THE SOLUTION:
- *   ReactPay uses Somnia's on-chain Reactivity to create a self-executing
+ *   PaySom uses Somnia's on-chain Reactivity to create a self-executing
  *   escrow. The chain itself acts as the trustless intermediary:
  *
  *   1. Client creates escrow + deposits RSTT tokens
@@ -25,10 +25,10 @@ import "./SomniaEventHandler.sol";
  *
  * DEPLOY:
  *   1. Deploy MockSTT.sol → copy address
- *   2. Deploy ReactPay.sol with MockSTT address as constructor arg
+ *   2. Deploy PaySom.sol with MockSTT address as constructor arg
  *   3. Run subscribe.ts to register Reactivity subscriptions
  */
-contract ReactPay is SomniaEventHandler {
+contract PaySom is SomniaEventHandler {
 
     // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -195,7 +195,7 @@ contract ReactPay is SomniaEventHandler {
     // ── Somnia Reactivity: _onEvent ───────────────────────────────────────────
 
     /**
-     * @notice THE CORE OF REACTPAY — called by Somnia validators automatically.
+     * @notice THE CORE OF PAYSOM — called by Somnia validators automatically.
      *
      *  Subscription 1 (emitter = MockSTT):
      *    Fires when RSTT tokens transfer INTO this contract.
@@ -220,17 +220,19 @@ contract ReactPay is SomniaEventHandler {
         if (sig == TRANSFER_SIG && emitter == token) {
             if (topics.length < 3) return;
 
-            address to = address(uint160(uint256(topics[2])));
+            address from = address(uint160(uint256(topics[1]))); // sender of tokens
+            address to   = address(uint160(uint256(topics[2])));
             if (to != address(this)) return;
 
             uint256 amount = abi.decode(data, (uint256));
 
-            // Match to a Pending escrow by amount
+            // Match to a Pending escrow by client address and amount
             for (uint256 i = 1; i <= escrowCount; i++) {
                 Escrow storage e = escrows[i];
                 if (
                     e.state  == EscrowState.Pending &&
-                    e.amount == amount              &&
+                    e.client == from                 &&
+                    e.amount == amount               &&
                     !paymentConfirmed[i]
                 ) {
                     paymentConfirmed[i] = true;
