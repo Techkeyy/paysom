@@ -1,4 +1,5 @@
-# ⚡ PaySom — Trustless Freelance Escrow on Somnia
+# ⚡ PaySom 
+Trustless Freelance Escrow on Somnia
 
 > Freelancers lose 20% to platforms like Upwork. PaySom fixes this with trustless escrow on Somnia — smart contracts that auto-release payment the moment work is delivered. No middlemen. No fees. No disputes.
 
