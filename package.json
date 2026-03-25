@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build --no-lint",
+    "build": "mkdir -p src/app src/components src/lib && cp page.tsx src/app/ && cp layout.tsx src/app/ && cp globals.css src/app/ && cp providers.tsx src/app/ && cp App.tsx src/components/ && cp chain.ts src/lib/ && cp contracts.ts src/lib/ && next build --no-lint",
     "start": "next start"
   },
   "dependencies": {
